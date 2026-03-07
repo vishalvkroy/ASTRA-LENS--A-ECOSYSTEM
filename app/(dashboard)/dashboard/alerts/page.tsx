@@ -6,7 +6,6 @@ import Topbar from '@/components/layout/Topbar'
 import AlertCard from '@/components/alerts/AlertCard'
 import type { Alert } from '@/app/api/alerts/route'
 import { cn } from '@/lib/utils'
-
 type FilterLevel = 'all' | 'high' | 'medium' | 'low'
 
 interface AlertsResponse {
