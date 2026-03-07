@@ -1,5 +1,11 @@
+import Topbar from '@/components/layout/Topbar'
+import ChatWindow from '@/components/chat/ChatWindow'
+
 export default function ChatPage() {
   return (
-    <div className="p-6 text-slate-400 text-sm">Chat — Phase 6</div>
+    <>
+      <Topbar title="Business Advisor" subtitle="Powered by Claude AI" />
+      <ChatWindow />
+    </>
   )
 }
