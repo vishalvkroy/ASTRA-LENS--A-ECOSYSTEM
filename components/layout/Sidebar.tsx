@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Bell,
   Network,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -20,19 +21,17 @@ const navItems = [
   { label: 'Ecosystem', icon: Network, href: '/dashboard/ecosystem' },
 ]
 
-export default function Sidebar() {
-  const pathname = usePathname()
-  const [alertCount, setAlertCount] = useState<number | null>(null)
-
-  useEffect(() => {
-    fetch('/api/alerts')
-      .then((r) => r.json())
-      .then((d) => setAlertCount(d?.counts?.total ?? 0))
-      .catch(() => {})
-  }, [])
-
+function NavContent({
+  pathname,
+  alertCount,
+  onLinkClick,
+}: {
+  pathname: string
+  alertCount: number | null
+  onLinkClick?: () => void
+}) {
   return (
-    <aside className="fixed left-0 top-0 h-screen w-60 bg-[#0A0F1E]/90 backdrop-blur-xl border-r border-white/[0.06] flex flex-col z-20">
+    <>
       {/* Logo */}
       <div className="py-6 px-5">
         <div className="flex items-center gap-3">
@@ -57,6 +56,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onLinkClick}
               className={cn(
                 'flex items-center gap-3 py-2.5 rounded-lg text-sm transition-all duration-200 group',
                 isActive
@@ -107,6 +107,93 @@ export default function Sidebar() {
           </a>
         </div>
       </div>
-    </aside>
+    </>
+  )
+}
+
+export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean; onClose?: () => void }) {
+  const pathname = usePathname()
+  const [alertCount, setAlertCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetch('/api/alerts')
+      .then((r) => r.json())
+      .then((d) => setAlertCount(d?.counts?.total ?? 0))
+      .catch(() => {})
+  }, [])
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex fixed left-0 top-0 h-screen w-60 bg-[#0A0F1E]/90 backdrop-blur-xl border-r border-white/[0.06] flex-col z-20">
+        <NavContent pathname={pathname} alertCount={alertCount} />
+      </aside>
+
+      {/* Mobile drawer overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Mobile drawer */}
+      <aside
+        className={cn(
+          'fixed left-0 top-0 h-screen w-72 bg-[#0A0F1E] border-r border-white/[0.06] flex flex-col z-50 transition-transform duration-300 md:hidden',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.05] transition-colors"
+        >
+          <X size={18} />
+        </button>
+        <NavContent pathname={pathname} alertCount={alertCount} onLinkClick={onClose} />
+      </aside>
+
+      {/* Mobile bottom nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0A0F1E]/95 backdrop-blur-md border-t border-white/[0.06] flex items-center">
+        {navItems.map((item) => {
+          const isActive =
+            pathname === item.href ||
+            (item.href !== '/dashboard' && pathname.startsWith(item.href))
+          const Icon = item.icon
+          const badge = item.showAlertBadge && alertCount ? alertCount : null
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex-1 flex flex-col items-center py-3 gap-1 relative"
+            >
+              <Icon
+                size={20}
+                className={cn(
+                  'transition-colors',
+                  isActive ? 'text-indigo-400' : 'text-slate-500'
+                )}
+              />
+              <span
+                className={cn(
+                  'text-[10px] font-medium transition-colors',
+                  isActive ? 'text-indigo-400' : 'text-slate-600'
+                )}
+              >
+                {item.label.split(' ')[0]}
+              </span>
+              {isActive && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-indigo-500 rounded-full" />
+              )}
+              {badge && !isActive && (
+                <span className="absolute top-2 right-[calc(50%-14px)] w-2 h-2 bg-rose-500 rounded-full" />
+              )}
+            </Link>
+          )
+        })}
+      </nav>
+    </>
   )
 }

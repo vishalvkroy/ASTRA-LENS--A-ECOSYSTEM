@@ -104,6 +104,28 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* Holi Campaign Banner */}
+        {!loading && (
+          <div className="bg-gradient-to-r from-pink-950/50 to-purple-950/50 border border-pink-500/20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1">
+              <p className="text-sm font-bold text-white">
+                Holi is 7 days away!
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Launch a special offer campaign on Spark to boost sales. Last year shops saw 40% higher footfall.
+              </p>
+            </div>
+            <a
+              href={process.env.NEXT_PUBLIC_SPARK_URL || 'https://spark.astrastudio.in'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 px-4 py-2 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-400 text-xs font-medium hover:bg-pink-500/20 transition-colors whitespace-nowrap"
+            >
+              Create Holi Campaign →
+            </a>
+          </div>
+        )}
+
         {/* Chart + Insights Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">

@@ -7,9 +7,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  defs,
-  linearGradient,
-  stop,
 } from 'recharts'
 import type { DailySale } from '@/lib/mock-data/types'
 import { formatCurrency } from '@/lib/utils'
