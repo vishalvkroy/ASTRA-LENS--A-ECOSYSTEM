@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import {
   LayoutDashboard,
   Lightbulb,
@@ -15,12 +16,20 @@ const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { label: 'AI Insights', icon: Lightbulb, href: '/dashboard/insights' },
   { label: 'Chat Advisor', icon: MessageCircle, href: '/dashboard/chat' },
-  { label: 'Smart Alerts', icon: Bell, href: '/dashboard/alerts', badge: 4 },
+  { label: 'Smart Alerts', icon: Bell, href: '/dashboard/alerts', showAlertBadge: true },
   { label: 'Ecosystem', icon: Network, href: '/dashboard/ecosystem' },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const [alertCount, setAlertCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetch('/api/alerts')
+      .then((r) => r.json())
+      .then((d) => setAlertCount(d?.counts?.total ?? 0))
+      .catch(() => {})
+  }, [])
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 bg-[#0A0F1E]/90 backdrop-blur-xl border-r border-white/[0.06] flex flex-col z-20">
@@ -38,8 +47,12 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 space-y-0.5">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+          const isActive =
+            pathname === item.href ||
+            (item.href !== '/dashboard' && pathname.startsWith(item.href))
           const Icon = item.icon
+          const badge = item.showAlertBadge && alertCount ? alertCount : null
+
           return (
             <Link
               key={item.href}
@@ -53,9 +66,9 @@ export default function Sidebar() {
             >
               <Icon size={16} className="shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {item.badge && (
-                <span className="ml-auto bg-indigo-500/20 text-indigo-400 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                  {item.badge}
+              {badge && (
+                <span className="ml-auto bg-rose-500/20 text-rose-400 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                  {badge}
                 </span>
               )}
             </Link>
