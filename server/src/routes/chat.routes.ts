@@ -37,20 +37,19 @@ router.post('/', aiRateLimit, async (req: Request, res: Response, next: NextFunc
       { role: 'user', content: message },
     ]
 
-    const stream = anthropic.messages.stream({
+    const stream = await (anthropic as any).chat.completions.create({
       model: AI_MODEL,
       max_tokens: 512,
-      system: systemPrompt,
-      messages,
+      stream: true,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...messages,
+      ],
     })
 
     for await (const chunk of stream) {
-      if (
-        chunk.type === 'content_block_delta' &&
-        chunk.delta.type === 'text_delta'
-      ) {
-        res.write(chunk.delta.text)
-      }
+      const text = chunk.choices[0]?.delta?.content || ''
+      if (text) res.write(text)
     }
 
     res.end()

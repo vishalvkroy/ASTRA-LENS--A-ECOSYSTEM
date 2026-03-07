@@ -1,29 +1,29 @@
-import Anthropic from '@anthropic-ai/sdk'
+import Groq from 'groq-sdk'
 import { logger } from './logger'
 
-let _client: Anthropic | null = null
+let _client: Groq | null = null
 
-export function getAnthropicClient(): Anthropic {
+function getGroqClient(): Groq {
   if (!_client) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY is not set in server/.env')
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error('GROQ_API_KEY is not set in server/.env')
     }
-    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    _client = new Groq({ apiKey: process.env.GROQ_API_KEY })
   }
   return _client
 }
 
-// Convenience export (lazy proxy)
-export const anthropic = new Proxy({} as Anthropic, {
+// Exported as `anthropic` so existing imports don't need to change
+export const anthropic = new Proxy({} as Groq, {
   get(_target, prop) {
-    return (getAnthropicClient() as any)[prop]
+    return (getGroqClient() as any)[prop]
   },
 })
 
-export const AI_MODEL = 'claude-haiku-4-5-20251001'
+export const AI_MODEL = 'llama-3.3-70b-versatile'
 
-if (process.env.ANTHROPIC_API_KEY) {
-  logger.success('Anthropic client ready')
+if (process.env.GROQ_API_KEY) {
+  logger.success('Groq client ready')
 } else {
-  logger.warn('ANTHROPIC_API_KEY not set — AI routes will fail until key is added to server/.env')
+  logger.warn('GROQ_API_KEY not set — AI routes will fail until key is added to server/.env')
 }

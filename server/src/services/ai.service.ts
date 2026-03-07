@@ -22,21 +22,21 @@ export class AIService {
       }
     }
 
-    logger.info('AIService.generateInsights → calling Claude...')
+    logger.info('AIService.generateInsights → calling Groq...')
 
     const prompt = buildInsightsPrompt(snapshot)
 
-    const response = await anthropic.messages.create({
+    const response = await (anthropic as any).chat.completions.create({
       model: AI_MODEL,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
-    }, { timeout: 30000 })
+    })
 
-    const text = (response.content[0] as any).text as string
+    const text: string = response.choices[0].message.content ?? ''
 
     const jsonMatch = text.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
-      logger.error('AIService → no JSON array in Claude response')
+      logger.error('AIService → no JSON array in Groq response')
       throw new Error('AI returned unexpected format. Please try again.')
     }
 

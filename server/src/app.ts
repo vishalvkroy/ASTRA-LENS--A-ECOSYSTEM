@@ -14,6 +14,9 @@ import chatRouter from './routes/chat.routes'
 
 const app = express()
 
+// Trust reverse proxy (Railway, Render) so rate limiting uses real client IP
+app.set('trust proxy', 1)
+
 // Global middleware
 app.use(corsMiddleware)
 app.use(express.json({ limit: '1mb' }))
