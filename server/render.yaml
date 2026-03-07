@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: astra-lens-api
+    runtime: node
+    rootDir: .
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEV_MODE
+        value: "true"
+      - key: PORT
+        value: "5000"
+      - key: SNAPSHOT_CACHE_TTL
+        value: "300"
+      - key: INSIGHTS_CACHE_TTL
+        value: "600"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
