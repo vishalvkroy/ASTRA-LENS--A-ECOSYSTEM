@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { AtlasService } from '../services/atlas.service'
 import { SparkService } from '../services/spark.service'
 import { logger } from '../lib/logger'
+import { setAtlasApiKey, setSparkApiKey, hasAtlasKey, hasSparkKey } from '../lib/config-store'
 
 const router = Router()
 
@@ -30,6 +31,27 @@ router.get('/services', async (req: Request, res: Response) => {
       usingMock: devMode || !sparkReachable,
     },
   })
+})
+
+// POST /api/health/setup — save API keys at runtime (no env restart needed)
+router.post('/setup', (req: Request, res: Response) => {
+  const { atlasApiKey, sparkApiKey } = req.body
+
+  if (atlasApiKey !== undefined) {
+    setAtlasApiKey(atlasApiKey || null)
+    logger.info(`POST /api/health/setup → Atlas key ${atlasApiKey ? 'set' : 'cleared'}`)
+  }
+  if (sparkApiKey !== undefined) {
+    setSparkApiKey(sparkApiKey || null)
+    logger.info(`POST /api/health/setup → Spark key ${sparkApiKey ? 'set' : 'cleared'}`)
+  }
+
+  res.json({ success: true, atlas: { hasKey: hasAtlasKey() }, spark: { hasKey: hasSparkKey() } })
+})
+
+// GET /api/health/credentials — check which keys are set (without exposing them)
+router.get('/credentials', (_req: Request, res: Response) => {
+  res.json({ atlas: { hasKey: hasAtlasKey() }, spark: { hasKey: hasSparkKey() } })
 })
 
 export default router

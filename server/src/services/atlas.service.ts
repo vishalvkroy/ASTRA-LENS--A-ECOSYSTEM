@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AtlasSnapshot } from '../types'
 import { getAtlasMock } from '../mock/atlas.mock'
 import { logger } from '../lib/logger'
+import { getAtlasApiKey } from '../lib/config-store'
 
 const ATLAS_BASE = process.env.ATLAS_API_URL || 'http://localhost:4000'
 const DEV_MODE = process.env.DEV_MODE === 'true'
@@ -10,7 +11,9 @@ export class AtlasService {
 
   static async isReachable(): Promise<boolean> {
     try {
-      await axios.get(`${ATLAS_BASE}/api/health`, { timeout: 3000 })
+      const key = getAtlasApiKey()
+      const headers = key ? { Authorization: `Bearer ${key}` } : {}
+      await axios.get(`${ATLAS_BASE}/api/health`, { headers, timeout: 3000 })
       return true
     } catch {
       return false
@@ -24,9 +27,8 @@ export class AtlasService {
     }
 
     try {
-      const headers = process.env.ATLAS_API_KEY
-        ? { Authorization: `Bearer ${process.env.ATLAS_API_KEY}` }
-        : {}
+      const key = getAtlasApiKey()
+      const headers = key ? { Authorization: `Bearer ${key}` } : {}
 
       const [salesRes, inventoryRes, customersRes] = await Promise.all([
         axios.get(`${ATLAS_BASE}/api/reports/sales-summary`, { headers, timeout: 5000 }),

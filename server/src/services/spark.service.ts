@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { SparkData } from '../types'
 import { getSparkMock } from '../mock/spark.mock'
 import { logger } from '../lib/logger'
+import { getSparkApiKey } from '../lib/config-store'
 
 const SPARK_BASE = process.env.SPARK_API_URL || 'http://localhost:3001'
 const DEV_MODE = process.env.DEV_MODE === 'true'
@@ -10,7 +11,9 @@ export class SparkService {
 
   static async isReachable(): Promise<boolean> {
     try {
-      await axios.get(`${SPARK_BASE}/api/health`, { timeout: 3000 })
+      const key = getSparkApiKey()
+      const headers = key ? { Authorization: `Bearer ${key}` } : {}
+      await axios.get(`${SPARK_BASE}/api/health`, { headers, timeout: 3000 })
       return true
     } catch {
       return false
@@ -24,9 +27,11 @@ export class SparkService {
     }
 
     try {
+      const key = getSparkApiKey()
+      const headers = key ? { Authorization: `Bearer ${key}` } : {}
       const [campaignsRes, waStatsRes] = await Promise.all([
-        axios.get(`${SPARK_BASE}/api/whatsapp/campaigns?limit=10`, { timeout: 5000 }),
-        axios.get(`${SPARK_BASE}/api/whatsapp/stats`, { timeout: 5000 }),
+        axios.get(`${SPARK_BASE}/api/whatsapp/campaigns?limit=10`, { headers, timeout: 5000 }),
+        axios.get(`${SPARK_BASE}/api/whatsapp/stats`, { headers, timeout: 5000 }),
       ])
 
       logger.success('SparkService → fetched live data')

@@ -6,7 +6,7 @@ import {
   Building2, Zap, CheckCircle2, XCircle, RefreshCw,
   LayoutDashboard, Package, Users, FileText, BarChart3,
   MessageSquare, Megaphone, Video, Calendar, CreditCard,
-  ExternalLink, AlertTriangle,
+  ExternalLink, AlertTriangle, Key, Eye, EyeOff, Link2, Unlink,
 } from 'lucide-react'
 import Topbar from '@/components/layout/Topbar'
 import { cn } from '@/lib/utils'
@@ -220,22 +220,149 @@ function PlatformCard({
   )
 }
 
+interface Credentials {
+  atlas: { hasKey: boolean }
+  spark: { hasKey: boolean }
+}
+
+function ApiKeyInput({
+  label, icon: Icon, color, placeholder, instructions,
+  hasKey, onSave, onDisconnect,
+}: {
+  label: string
+  icon: any
+  color: 'blue' | 'orange'
+  placeholder: string
+  instructions: string
+  hasKey: boolean
+  onSave: (key: string) => Promise<void>
+  onDisconnect: () => Promise<void>
+}) {
+  const [value, setValue] = useState('')
+  const [show, setShow] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const colors = {
+    blue: { border: 'border-blue-500/20', text: 'text-blue-400', bg: 'bg-blue-500/10', btn: 'bg-blue-500 hover:bg-blue-600' },
+    orange: { border: 'border-orange-500/20', text: 'text-orange-400', bg: 'bg-orange-500/10', btn: 'bg-orange-500 hover:bg-orange-600' },
+  }
+  const c = colors[color]
+
+  async function handleSave() {
+    if (!value.trim()) { setError('Please enter your API key'); return }
+    setSaving(true); setError('')
+    try {
+      await onSave(value.trim())
+      setValue('')
+    } catch {
+      setError('Failed to save. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (hasKey) {
+    return (
+      <div className={cn('rounded-xl border p-4 flex items-center justify-between gap-3', c.border, c.bg)}>
+        <div className="flex items-center gap-3">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <div>
+            <p className={cn('text-sm font-medium', c.text)}>{label} Connected</p>
+            <p className="text-xs text-slate-500 mt-0.5">API key is active · resets on server restart</p>
+          </div>
+        </div>
+        <button
+          onClick={onDisconnect}
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-400 transition-colors shrink-0"
+        >
+          <Unlink size={12} />
+          Disconnect
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Icon size={14} className={c.text} />
+        <p className="text-sm font-medium text-white">{label}</p>
+      </div>
+      <p className="text-xs text-slate-400">{instructions}</p>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={show ? 'text' : 'password'}
+            value={value}
+            onChange={(e) => { setValue(e.target.value); setError('') }}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder={placeholder}
+            className="w-full bg-[#080D1A] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-white/20 pr-8"
+          />
+          <button
+            type="button"
+            onClick={() => setShow(!show)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+          >
+            {show ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className={cn('px-4 py-2 rounded-lg text-xs font-medium text-white transition-colors shrink-0 flex items-center gap-1.5', c.btn)}
+        >
+          <Link2 size={12} />
+          {saving ? 'Saving...' : 'Connect'}
+        </button>
+      </div>
+      {error && <p className="text-xs text-rose-400">{error}</p>}
+    </div>
+  )
+}
+
 export default function ConnectPage() {
   const [status, setStatus] = useState<ServiceStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  const [creds, setCreds] = useState<Credentials>({ atlas: { hasKey: false }, spark: { hasKey: false } })
 
   async function checkStatus() {
     setLoading(true)
     try {
-      const res = await fetch('/api/connect')
-      const data = await res.json()
-      setStatus(data)
+      const [statusRes, credsRes] = await Promise.all([
+        fetch('/api/connect'),
+        fetch('/api/connect/setup'),
+      ])
+      const [statusData, credsData] = await Promise.all([statusRes.json(), credsRes.json()])
+      setStatus(statusData)
+      setCreds(credsData)
       setLastChecked(new Date())
     } catch {
       // keep previous status
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function saveKey(service: 'atlas' | 'spark', key: string) {
+    const body = service === 'atlas' ? { atlasApiKey: key } : { sparkApiKey: key }
+    const res = await fetch('/api/connect/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const data = await res.json()
+    if (data.success) {
+      setCreds(data)
+      await checkStatus()
+    }
+  }
+
+  async function clearKey(service: 'atlas' | 'spark') {
+    const body = service === 'atlas' ? { atlasApiKey: '' } : { sparkApiKey: '' }
+    const res = await fetch('/api/connect/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const data = await res.json()
+    if (data.success) {
+      setCreds(data)
+      await checkStatus()
     }
   }
 
@@ -311,48 +438,45 @@ export default function ConnectPage() {
           />
         </div>
 
-        {/* How to connect */}
+        {/* Link Account */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
-          className="bg-[#0F1629] rounded-2xl border border-white/[0.06] p-5"
+          className="bg-[#0F1629] rounded-2xl border border-white/[0.06] p-5 space-y-4"
         >
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">
-            How to connect
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              {
-                step: '1',
-                title: 'Set API URLs',
-                desc: 'Add your Atlas and Spark server URLs to server/.env — ATLAS_API_URL and SPARK_API_URL.',
-                color: 'from-blue-500 to-indigo-500',
-              },
-              {
-                step: '2',
-                title: 'Set DEV_MODE=false',
-                desc: 'In server/.env, change DEV_MODE to false so the backend calls real APIs instead of mock data.',
-                color: 'from-indigo-500 to-purple-500',
-              },
-              {
-                step: '3',
-                title: 'Restart & Refresh',
-                desc: 'Restart the Express server and click Refresh above. Green dots mean live data is flowing.',
-                color: 'from-purple-500 to-orange-500',
-              },
-            ].map((item) => (
-              <div key={item.step} className="flex gap-3">
-                <div className={cn('w-7 h-7 rounded-full bg-gradient-to-br shrink-0 flex items-center justify-center text-white text-xs font-bold', item.color)}>
-                  {item.step}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">{item.title}</p>
-                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{item.desc}</p>
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center gap-2">
+            <Key size={14} className="text-slate-400" />
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+              Link Your Accounts
+            </p>
           </div>
+
+          <ApiKeyInput
+            label="Astra Atlas"
+            icon={Building2}
+            color="blue"
+            placeholder="Paste your Atlas API key..."
+            instructions="Open Atlas → Settings → Integrations → Generate API Key → Copy it here"
+            hasKey={creds.atlas.hasKey}
+            onSave={(key) => saveKey('atlas', key)}
+            onDisconnect={() => clearKey('atlas')}
+          />
+
+          <ApiKeyInput
+            label="Astra Spark"
+            icon={Zap}
+            color="orange"
+            placeholder="Paste your Spark API key..."
+            instructions="Open Spark → Settings → API Access → Generate Key → Copy it here"
+            hasKey={creds.spark.hasKey}
+            onSave={(key) => saveKey('spark', key)}
+            onDisconnect={() => clearKey('spark')}
+          />
+
+          <p className="text-[10px] text-slate-600 leading-relaxed">
+            Keys are stored in memory on the server and cleared on restart. For permanent storage, add them to your Render environment variables as <span className="font-mono">ATLAS_API_KEY</span> and <span className="font-mono">SPARK_API_KEY</span>.
+          </p>
         </motion.div>
 
       </div>
