@@ -2,18 +2,33 @@ import axios from 'axios'
 import type { AtlasSnapshot } from '../types'
 import { getAtlasMock } from '../mock/atlas.mock'
 import { logger } from '../lib/logger'
-import { getTenantApiKey } from '../lib/tenant-credentials-store'
+import { getTenantApiKey, getTenantUrl } from '../lib/tenant-credentials-store'
 
-const ATLAS_BASE = process.env.ATLAS_API_URL || 'http://localhost:4000'
-const DEV_MODE = process.env.DEV_MODE === 'true'
-
+/**
+ * AtlasService — reads operations data from Astra Atlas.
+ *
+ * Auth: Authorization: Bearer <key>
+ *
+ * If tenant has no key/url configured → demo (mock) data.
+ * If API call fails → fallback to mock data.
+ */
 export class AtlasService {
 
+  private static getConfig(tenantId: string) {
+    const url = getTenantUrl(tenantId, 'atlas')
+    const key = getTenantApiKey(tenantId, 'atlas')
+    return { url, key }
+  }
+
   static async isReachable(tenantId: string): Promise<boolean> {
+    const { url, key } = AtlasService.getConfig(tenantId)
+    if (!url || !key) return false
+
     try {
-      const key = getTenantApiKey(tenantId, 'atlas')
-      const headers = key ? { Authorization: `Bearer ${key}` } : {}
-      await axios.get(`${ATLAS_BASE}/api/health`, { headers, timeout: 3000 })
+      await axios.get(`${url}/api/health`, {
+        headers: { Authorization: `Bearer ${key}` },
+        timeout: 3000,
+      })
       return true
     } catch {
       return false
@@ -21,22 +36,31 @@ export class AtlasService {
   }
 
   static async getSnapshot(tenantId: string): Promise<AtlasSnapshot> {
-    if (DEV_MODE) {
+    if (process.env.DEV_MODE === 'true') {
       logger.info('AtlasService → DEV_MODE: using mock data')
       return getAtlasMock()
     }
 
+    const { url, key } = AtlasService.getConfig(tenantId)
+
+    if (!url || !key) {
+      logger.info(
+        `AtlasService → tenant:${tenantId} not configured ` +
+        `(url:${!!url} key:${!!key}), using demo data`
+      )
+      return getAtlasMock()
+    }
+
     try {
-      const key = getTenantApiKey(tenantId, 'atlas')
-      const headers = key ? { Authorization: `Bearer ${key}` } : {}
+      const headers = { Authorization: `Bearer ${key}` }
 
       const [salesRes, inventoryRes, customersRes] = await Promise.all([
-        axios.get(`${ATLAS_BASE}/api/reports/sales-summary`, { headers, timeout: 5000 }),
-        axios.get(`${ATLAS_BASE}/api/inventory?limit=100`, { headers, timeout: 5000 }),
-        axios.get(`${ATLAS_BASE}/api/customers/summary`, { headers, timeout: 5000 }),
+        axios.get(`${url}/api/reports/sales-summary`, { headers, timeout: 8000 }),
+        axios.get(`${url}/api/inventory?limit=100`, { headers, timeout: 8000 }),
+        axios.get(`${url}/api/customers/summary`, { headers, timeout: 8000 }),
       ])
 
-      logger.success('AtlasService → fetched live data')
+      logger.success(`AtlasService → live data for tenant:${tenantId}`)
 
       return {
         business: salesRes.data.business,
@@ -67,7 +91,7 @@ export class AtlasService {
         },
       }
     } catch (err: any) {
-      logger.warn(`AtlasService → API unreachable (${err.message}), falling back to mock`)
+      logger.warn(`AtlasService → unreachable for tenant:${tenantId} (${err.message}), using demo data`)
       return getAtlasMock()
     }
   }

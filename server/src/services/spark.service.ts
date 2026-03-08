@@ -2,18 +2,38 @@ import axios from 'axios'
 import type { SparkData } from '../types'
 import { getSparkMock } from '../mock/spark.mock'
 import { logger } from '../lib/logger'
-import { getTenantApiKey } from '../lib/tenant-credentials-store'
+import { getTenantApiKey, getTenantUrl, getSparkBusinessId } from '../lib/tenant-credentials-store'
 
-const SPARK_BASE = process.env.SPARK_API_URL || 'http://localhost:3001'
-const DEV_MODE = process.env.DEV_MODE === 'true'
-
+/**
+ * SparkService — reads marketing data from Astra Spark.
+ *
+ * Integration contract (see PROMPT_FOR_SPARK.md):
+ *   GET <sparkUrl>/api/lens/snapshot?businessId=<uuid>
+ *   GET <sparkUrl>/api/lens/health?businessId=<uuid>
+ *   Auth: x-lens-key: <key>  (set as LENS_API_KEY in Spark's .env)
+ *
+ * If tenant has no key/url/businessId → demo (mock) data.
+ * If API call fails → fallback to mock data.
+ */
 export class SparkService {
 
+  private static getConfig(tenantId: string) {
+    const url = getTenantUrl(tenantId, 'spark')
+    const key = getTenantApiKey(tenantId, 'spark')
+    const businessId = getSparkBusinessId(tenantId)
+    return { url, key, businessId }
+  }
+
   static async isReachable(tenantId: string): Promise<boolean> {
+    const { url, key, businessId } = SparkService.getConfig(tenantId)
+    if (!url || !key) return false
+
     try {
-      const key = getTenantApiKey(tenantId, 'spark')
-      const headers = key ? { Authorization: `Bearer ${key}` } : {}
-      await axios.get(`${SPARK_BASE}/api/health`, { headers, timeout: 3000 })
+      await axios.get(`${url}/api/lens/health`, {
+        headers: { 'x-lens-key': key },
+        params: businessId ? { businessId } : {},
+        timeout: 3000,
+      })
       return true
     } catch {
       return false
@@ -21,50 +41,58 @@ export class SparkService {
   }
 
   static async getSnapshot(tenantId: string): Promise<SparkData> {
-    if (DEV_MODE) {
+    if (process.env.DEV_MODE === 'true') {
       logger.info('SparkService → DEV_MODE: using mock data')
       return getSparkMock()
     }
 
+    const { url, key, businessId } = SparkService.getConfig(tenantId)
+
+    if (!url || !key || !businessId) {
+      logger.info(
+        `SparkService → tenant:${tenantId} not configured ` +
+        `(url:${!!url} key:${!!key} businessId:${!!businessId}), using demo data`
+      )
+      return getSparkMock()
+    }
+
     try {
-      const key = getTenantApiKey(tenantId, 'spark')
-      const headers = key ? { Authorization: `Bearer ${key}` } : {}
-      const [campaignsRes, waStatsRes] = await Promise.all([
-        axios.get(`${SPARK_BASE}/api/whatsapp/campaigns?limit=10`, { headers, timeout: 5000 }),
-        axios.get(`${SPARK_BASE}/api/whatsapp/stats`, { headers, timeout: 5000 }),
-      ])
+      const res = await axios.get(`${url}/api/lens/snapshot`, {
+        headers: { 'x-lens-key': key },
+        params: { businessId },
+        timeout: 8000,
+      })
 
-      logger.success('SparkService → fetched live data')
+      logger.success(`SparkService → live data for tenant:${tenantId}`)
 
-      const campaigns = campaignsRes.data.campaigns || []
-
+      const data = res.data
       return {
         campaigns: {
-          total: campaignsRes.data.total || campaigns.length,
-          running: campaigns.filter((c: any) => c.status === 'RUNNING').length,
-          list: campaigns.map((c: any) => ({
+          total: data.campaigns?.total ?? 0,
+          running: data.campaigns?.running ?? 0,
+          list: (data.campaigns?.list ?? []).map((c: any) => ({
             id: c.id,
             name: c.name,
             status: c.status?.toLowerCase(),
             type: 'whatsapp',
-            sentAt: c.scheduledAt,
-            delivered: c.stats?.delivered || 0,
-            opened: c.stats?.read || 0,
-            clicked: c.stats?.clicked || 0,
-            audience: c.stats?.total || 0,
+            sentAt: c.sentAt,
+            delivered: c.delivered ?? 0,
+            opened: c.opened ?? 0,
+            clicked: c.clicked ?? 0,
+            audience: c.audience ?? 0,
           })),
         },
         whatsapp: {
-          messagesSentThisMonth: waStatsRes.data.messagesSentThisMonth || 0,
-          deliveryRate: waStatsRes.data.deliveryRate || 0,
-          openRate: waStatsRes.data.openRate || 0,
-          creditsRemaining: waStatsRes.data.credits || 0,
+          messagesSentThisMonth: data.whatsapp?.messagesSentThisMonth ?? 0,
+          deliveryRate: data.whatsapp?.deliveryRate ?? 0,
+          openRate: data.whatsapp?.openRate ?? 0,
+          creditsRemaining: data.whatsapp?.creditsRemaining ?? 0,
         },
-        reelScripts: 0,
-        scheduledPosts: 0,
+        reelScripts: data.reelScripts ?? 0,
+        scheduledPosts: data.scheduledPosts ?? 0,
       }
     } catch (err: any) {
-      logger.warn(`SparkService → API unreachable (${err.message}), falling back to mock`)
+      logger.warn(`SparkService → unreachable for tenant:${tenantId} (${err.message}), using demo data`)
       return getSparkMock()
     }
   }

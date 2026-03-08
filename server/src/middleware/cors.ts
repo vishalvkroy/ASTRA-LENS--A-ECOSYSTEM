@@ -20,6 +20,6 @@ export const corsMiddleware = cors({
     callback(new Error(`CORS: ${origin} not allowed`))
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-lens-key'],
   credentials: true,
 })
