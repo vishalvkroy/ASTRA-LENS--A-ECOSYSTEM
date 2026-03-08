@@ -2,23 +2,34 @@ import { Router, Request, Response } from 'express'
 import { AtlasService } from '../services/atlas.service'
 import { SparkService } from '../services/spark.service'
 import { logger } from '../lib/logger'
-import { setAtlasApiKey, setSparkApiKey, hasAtlasKey, hasSparkKey } from '../lib/config-store'
+import { getTenantIdFromRequest } from '../lib/tenant'
+import { getCredentialStatus, setTenantApiKey } from '../lib/tenant-credentials-store'
 
 const router = Router()
+
+function credentialPayload(tenantId: string) {
+  return {
+    tenantId,
+    atlas: getCredentialStatus(tenantId, 'atlas'),
+    spark: getCredentialStatus(tenantId, 'spark'),
+  }
+}
 
 // GET /api/health/services
 // Returns reachability status for Atlas + Spark
 router.get('/services', async (req: Request, res: Response) => {
   const devMode = process.env.DEV_MODE === 'true'
+  const tenantId = getTenantIdFromRequest(req)
 
   const [atlasReachable, sparkReachable] = await Promise.all([
-    devMode ? Promise.resolve(false) : AtlasService.isReachable(),
-    devMode ? Promise.resolve(false) : SparkService.isReachable(),
+    devMode ? Promise.resolve(false) : AtlasService.isReachable(tenantId),
+    devMode ? Promise.resolve(false) : SparkService.isReachable(tenantId),
   ])
 
-  logger.info(`GET /api/health/services → atlas:${atlasReachable} spark:${sparkReachable} devMode:${devMode}`)
+  logger.info(`GET /api/health/services -> tenant:${tenantId} atlas:${atlasReachable} spark:${sparkReachable} devMode:${devMode}`)
 
   res.json({
+    tenantId,
     devMode,
     atlas: {
       reachable: atlasReachable,
@@ -33,25 +44,30 @@ router.get('/services', async (req: Request, res: Response) => {
   })
 })
 
-// POST /api/health/setup — save API keys at runtime (no env restart needed)
+// POST /api/health/setup - save API keys per tenant
 router.post('/setup', (req: Request, res: Response) => {
-  const { atlasApiKey, sparkApiKey } = req.body
+  const tenantId = getTenantIdFromRequest(req)
+  const { atlasApiKey, sparkApiKey } = req.body as {
+    atlasApiKey?: string
+    sparkApiKey?: string
+  }
 
   if (atlasApiKey !== undefined) {
-    setAtlasApiKey(atlasApiKey || null)
-    logger.info(`POST /api/health/setup → Atlas key ${atlasApiKey ? 'set' : 'cleared'}`)
+    setTenantApiKey(tenantId, 'atlas', atlasApiKey || null)
+    logger.info(`POST /api/health/setup -> tenant:${tenantId} atlas:${atlasApiKey ? 'set' : 'cleared'}`)
   }
   if (sparkApiKey !== undefined) {
-    setSparkApiKey(sparkApiKey || null)
-    logger.info(`POST /api/health/setup → Spark key ${sparkApiKey ? 'set' : 'cleared'}`)
+    setTenantApiKey(tenantId, 'spark', sparkApiKey || null)
+    logger.info(`POST /api/health/setup -> tenant:${tenantId} spark:${sparkApiKey ? 'set' : 'cleared'}`)
   }
 
-  res.json({ success: true, atlas: { hasKey: hasAtlasKey() }, spark: { hasKey: hasSparkKey() } })
+  res.json({ success: true, ...credentialPayload(tenantId) })
 })
 
-// GET /api/health/credentials — check which keys are set (without exposing them)
-router.get('/credentials', (_req: Request, res: Response) => {
-  res.json({ atlas: { hasKey: hasAtlasKey() }, spark: { hasKey: hasSparkKey() } })
+// GET /api/health/credentials - tenant-scoped key status
+router.get('/credentials', (req: Request, res: Response) => {
+  const tenantId = getTenantIdFromRequest(req)
+  res.json(credentialPayload(tenantId))
 })
 
 export default router

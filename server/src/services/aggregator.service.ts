@@ -3,26 +3,29 @@ import { AtlasService } from './atlas.service'
 import { SparkService } from './spark.service'
 import { cache } from '../lib/cache'
 import { logger } from '../lib/logger'
+import { normalizeTenantId } from '../lib/tenant'
 
 const CACHE_TTL = parseInt(process.env.SNAPSHOT_CACHE_TTL || '300', 10)
-const CACHE_KEY = 'business_snapshot'
 
 export class AggregatorService {
 
-  static async getSnapshot(forceRefresh = false): Promise<BusinessSnapshot> {
+  static async getSnapshot(forceRefresh = false, tenantId = 'default'): Promise<BusinessSnapshot> {
+    const resolvedTenantId = normalizeTenantId(tenantId)
+    const cacheKey = `business_snapshot:${resolvedTenantId}`
+
     if (!forceRefresh) {
-      const cached = cache.get<BusinessSnapshot>(CACHE_KEY)
+      const cached = cache.get<BusinessSnapshot>(cacheKey)
       if (cached) {
-        logger.info('AggregatorService → returning cached snapshot')
+        logger.info(`AggregatorService -> returning cached snapshot for tenant:${resolvedTenantId}`)
         return cached
       }
     }
 
-    logger.info('AggregatorService → fetching fresh snapshot...')
+    logger.info(`AggregatorService -> fetching fresh snapshot for tenant:${resolvedTenantId}`)
 
     const [atlas, spark] = await Promise.all([
-      AtlasService.getSnapshot(),
-      SparkService.getSnapshot(),
+      AtlasService.getSnapshot(resolvedTenantId),
+      SparkService.getSnapshot(resolvedTenantId),
     ])
 
     const enrichedInventory = {
@@ -42,8 +45,8 @@ export class AggregatorService {
       generatedAt: new Date().toISOString(),
     }
 
-    cache.set(CACHE_KEY, snapshot, CACHE_TTL)
-    logger.success(`AggregatorService → snapshot ready, cached for ${CACHE_TTL}s`)
+    cache.set(cacheKey, snapshot, CACHE_TTL)
+    logger.success(`AggregatorService -> snapshot ready for tenant:${resolvedTenantId}, cached for ${CACHE_TTL}s`)
 
     return snapshot
   }

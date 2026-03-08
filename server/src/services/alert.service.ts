@@ -3,11 +3,11 @@ import { AggregatorService } from './aggregator.service'
 
 export class AlertService {
 
-  static async getAlerts(): Promise<{
+  static async getAlerts(tenantId = 'default'): Promise<{
     alerts: Alert[]
     counts: { high: number; medium: number; low: number; total: number }
   }> {
-    const snapshot = await AggregatorService.getSnapshot()
+    const snapshot = await AggregatorService.getSnapshot(false, tenantId)
     const alerts: Alert[] = []
 
     // RULE 1: Low stock — critical (daysLeft <= 3) or warning (daysLeft <= 7)

@@ -5,6 +5,7 @@ import { anthropic, AI_MODEL } from '../lib/anthropic'
 import { aiRateLimit } from '../middleware/rate-limit'
 import { logger } from '../lib/logger'
 import type { ChatMessage } from '../types'
+import { getTenantIdFromRequest } from '../lib/tenant'
 
 const router = Router()
 
@@ -21,10 +22,11 @@ router.post('/', aiRateLimit, async (req: Request, res: Response, next: NextFunc
       return
     }
 
-    const snapshot = await AggregatorService.getSnapshot()
+    const tenantId = getTenantIdFromRequest(req)
+    const snapshot = await AggregatorService.getSnapshot(false, tenantId)
     const systemPrompt = buildChatSystemPrompt(snapshot)
 
-    logger.info(`POST /api/chat → "${message.slice(0, 50)}..."`)
+    logger.info(`POST /api/chat -> tenant:${tenantId} message:"${message.slice(0, 50)}..."`)
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8')
     res.setHeader('Transfer-Encoding', 'chunked')
@@ -53,7 +55,7 @@ router.post('/', aiRateLimit, async (req: Request, res: Response, next: NextFunc
     }
 
     res.end()
-    logger.success('POST /api/chat → stream complete')
+    logger.success('POST /api/chat -> stream complete')
   } catch (err) {
     if (!res.headersSent) {
       next(err)

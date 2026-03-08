@@ -1,11 +1,17 @@
 import { NextRequest } from 'next/server'
+import { resolveTenantId } from '../_lib/tenant'
 
 export async function POST(req: NextRequest) {
+  const tenantId = resolveTenantId(req)
+
   try {
     const body = await req.json()
     const backendRes = await fetch(`${process.env.BACKEND_URL}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': tenantId,
+      },
       body: JSON.stringify(body),
     })
 

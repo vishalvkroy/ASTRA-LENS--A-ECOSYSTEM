@@ -1,8 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { resolveTenantId } from '../_lib/tenant'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const tenantId = resolveTenantId(request)
+
   try {
     const res = await fetch(`${process.env.BACKEND_URL}/api/alerts`, {
+      headers: { 'x-tenant-id': tenantId },
       next: { revalidate: 0 },
     })
     if (!res.ok) throw new Error(`Backend error: ${res.status}`)

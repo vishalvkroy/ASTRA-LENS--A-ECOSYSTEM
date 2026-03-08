@@ -29,5 +29,9 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 
+# Runtime credential storage
+data/tenant-credentials.json
+server/data/tenant-credentials.json
+
 # Claude
 .claude/

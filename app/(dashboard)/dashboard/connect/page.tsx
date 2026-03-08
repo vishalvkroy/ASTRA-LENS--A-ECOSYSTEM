@@ -13,11 +13,19 @@ import { cn } from '@/lib/utils'
 
 const ATLAS_URL = process.env.NEXT_PUBLIC_ATLAS_URL || 'https://atlas.astrastudio.in'
 const SPARK_URL = process.env.NEXT_PUBLIC_SPARK_URL || 'https://spark.astrastudio.in'
+const TENANT_ID_PATTERN = /^[a-zA-Z0-9._-]{2,64}$/
 
 interface ServiceStatus {
+  tenantId?: string
   devMode: boolean
   atlas: { reachable: boolean; url: string; usingMock: boolean }
   spark: { reachable: boolean; url: string; usingMock: boolean }
+}
+
+interface Credentials {
+  tenantId?: string
+  atlas: { hasKey: boolean; lastUpdatedAt?: string | null }
+  spark: { hasKey: boolean; lastUpdatedAt?: string | null }
 }
 
 const atlasActions = [
@@ -37,6 +45,12 @@ const sparkActions = [
   { label: 'Analytics', icon: BarChart3, path: '/analytics' },
   { label: 'Buy Credits', icon: CreditCard, path: '/whatsapp/bundles' },
 ]
+
+function normalizeTenantId(raw: string): string {
+  const value = raw.trim().toLowerCase()
+  if (!value || !TENANT_ID_PATTERN.test(value)) return 'default'
+  return value
+}
 
 function StatusBadge({ reachable, usingMock }: { reachable: boolean; usingMock: boolean }) {
   if (reachable) {
@@ -103,7 +117,6 @@ function PlatformCard({
       transition={{ delay, duration: 0.4 }}
       className={cn('bg-[#0F1629] rounded-2xl border p-6 flex flex-col gap-5', c.border)}
     >
-      {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className={cn('w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white shadow-lg', c.icon)}>
@@ -121,7 +134,6 @@ function PlatformCard({
         )}
       </div>
 
-      {/* API URL */}
       {status && (
         <div className="bg-[#080D1A] rounded-lg px-3 py-2.5 border border-white/[0.05]">
           <p className="text-[10px] text-slate-500 mb-0.5 uppercase tracking-widest">API Endpoint</p>
@@ -129,7 +141,6 @@ function PlatformCard({
         </div>
       )}
 
-      {/* Status detail */}
       {status && (
         <div className="flex items-center gap-2">
           {status.reachable ? (
@@ -139,18 +150,16 @@ function PlatformCard({
           )}
           <p className="text-xs text-slate-400">
             {status.reachable
-              ? 'Connected — reading live data from your account'
+              ? 'Connected - reading live data from your account'
               : status.usingMock
-              ? 'Using demo data — connect your account to see real numbers'
-              : 'Cannot reach API — check if the service is running'}
+              ? 'Using demo data - connect your account to see real numbers'
+              : 'Cannot reach API - check if the service is running'}
           </p>
         </div>
       )}
 
-      {/* Divider */}
       <div className="border-t border-white/[0.05]" />
 
-      {/* Quick actions */}
       <div>
         <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-3">
           {isDesktopApp ? 'Available in App' : 'Quick Actions'}
@@ -189,7 +198,6 @@ function PlatformCard({
         </div>
       </div>
 
-      {/* Open platform button */}
       {isDesktopApp ? (
         <div className={cn(
           'flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium border cursor-default select-none',
@@ -220,14 +228,9 @@ function PlatformCard({
   )
 }
 
-interface Credentials {
-  atlas: { hasKey: boolean }
-  spark: { hasKey: boolean }
-}
-
 function ApiKeyInput({
   label, icon: Icon, color, placeholder, instructions,
-  hasKey, onSave, onDisconnect,
+  hasKey, lastUpdatedAt, reconnectRequired, onSave, onDisconnect,
 }: {
   label: string
   icon: any
@@ -235,6 +238,8 @@ function ApiKeyInput({
   placeholder: string
   instructions: string
   hasKey: boolean
+  lastUpdatedAt?: string | null
+  reconnectRequired?: boolean
   onSave: (key: string) => Promise<void>
   onDisconnect: () => Promise<void>
 }) {
@@ -251,7 +256,8 @@ function ApiKeyInput({
 
   async function handleSave() {
     if (!value.trim()) { setError('Please enter your API key'); return }
-    setSaving(true); setError('')
+    setSaving(true)
+    setError('')
     try {
       await onSave(value.trim())
       setValue('')
@@ -269,7 +275,14 @@ function ApiKeyInput({
           <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
           <div>
             <p className={cn('text-sm font-medium', c.text)}>{label} Connected</p>
-            <p className="text-xs text-slate-500 mt-0.5">API key is active · resets on server restart</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {lastUpdatedAt
+                ? `Last connected: ${new Date(lastUpdatedAt).toLocaleString('en-IN')}`
+                : 'Connected via environment or previously saved key'}
+            </p>
+            {reconnectRequired && (
+              <p className="text-xs text-amber-400 mt-1">Reconnect required: key exists but service is unreachable.</p>
+            )}
           </div>
         </div>
         <button
@@ -323,18 +336,35 @@ function ApiKeyInput({
 }
 
 export default function ConnectPage() {
+  const [tenantId, setTenantId] = useState('default')
+  const [tenantDraft, setTenantDraft] = useState('default')
   const [status, setStatus] = useState<ServiceStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
-  const [creds, setCreds] = useState<Credentials>({ atlas: { hasKey: false }, spark: { hasKey: false } })
+  const [creds, setCreds] = useState<Credentials>({
+    tenantId: 'default',
+    atlas: { hasKey: false, lastUpdatedAt: null },
+    spark: { hasKey: false, lastUpdatedAt: null },
+  })
 
-  async function checkStatus() {
+  useEffect(() => {
+    const stored = typeof window !== 'undefined' ? window.localStorage.getItem('astra_tenant_id') : null
+    const initialTenant = normalizeTenantId(stored || 'default')
+    setTenantId(initialTenant)
+    setTenantDraft(initialTenant)
+  }, [])
+
+  async function checkStatus(targetTenantId = tenantId) {
     setLoading(true)
     try {
+      const query = `?tenantId=${encodeURIComponent(targetTenantId)}`
+      const headers = { 'x-tenant-id': targetTenantId }
+
       const [statusRes, credsRes] = await Promise.all([
-        fetch('/api/connect'),
-        fetch('/api/connect/setup'),
+        fetch(`/api/connect${query}`, { headers }),
+        fetch(`/api/connect/setup${query}`, { headers }),
       ])
+
       const [statusData, credsData] = await Promise.all([statusRes.json(), credsRes.json()])
       setStatus(statusData)
       setCreds(credsData)
@@ -347,29 +377,56 @@ export default function ConnectPage() {
   }
 
   async function saveKey(service: 'atlas' | 'spark', key: string) {
-    const body = service === 'atlas' ? { atlasApiKey: key } : { sparkApiKey: key }
-    const res = await fetch('/api/connect/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const body = service === 'atlas'
+      ? { tenantId, atlasApiKey: key }
+      : { tenantId, sparkApiKey: key }
+
+    const res = await fetch('/api/connect/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+      body: JSON.stringify(body),
+    })
+
     const data = await res.json()
     if (data.success) {
       setCreds(data)
-      await checkStatus()
+      await checkStatus(tenantId)
     }
   }
 
   async function clearKey(service: 'atlas' | 'spark') {
-    const body = service === 'atlas' ? { atlasApiKey: '' } : { sparkApiKey: '' }
-    const res = await fetch('/api/connect/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const body = service === 'atlas'
+      ? { tenantId, atlasApiKey: '' }
+      : { tenantId, sparkApiKey: '' }
+
+    const res = await fetch('/api/connect/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+      body: JSON.stringify(body),
+    })
+
     const data = await res.json()
     if (data.success) {
       setCreds(data)
-      await checkStatus()
+      await checkStatus(tenantId)
     }
   }
 
-  useEffect(() => { checkStatus() }, [])
+  useEffect(() => {
+    checkStatus(tenantId)
+  }, [tenantId])
 
-  const bothConnected = status?.atlas.reachable && status?.spark.reachable
-  const anyConnected = status?.atlas.reachable || status?.spark.reachable
+  function applyTenant() {
+    const normalized = normalizeTenantId(tenantDraft)
+    setTenantId(normalized)
+    setTenantDraft(normalized)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('astra_tenant_id', normalized)
+    }
+  }
+
+  const bothConnected = !!(status?.atlas.reachable && status?.spark.reachable)
+  const anyConnected = !!(status?.atlas.reachable || status?.spark.reachable)
 
   return (
     <>
@@ -379,8 +436,6 @@ export default function ConnectPage() {
       />
 
       <div className="p-6 max-w-5xl mx-auto w-full space-y-6">
-
-        {/* Data source banner */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -397,14 +452,14 @@ export default function ConnectPage() {
               {loading
                 ? 'Checking connections...'
                 : bothConnected
-                ? 'Both platforms connected — Astra Lens is reading your live business data'
+                ? 'Both platforms connected - Astra Lens is reading your live business data'
                 : anyConnected
-                ? 'Partial connection — some data is live, some is demo'
-                : 'Running on demo data — connect your Atlas and Spark accounts to unlock live insights'}
+                ? 'Partial connection - some data is live, some is demo'
+                : 'Running on demo data - connect your Atlas and Spark accounts to unlock live insights'}
             </p>
           </div>
           <button
-            onClick={checkStatus}
+            onClick={() => checkStatus(tenantId)}
             disabled={loading}
             className="shrink-0 flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
           >
@@ -413,11 +468,10 @@ export default function ConnectPage() {
           </button>
         </motion.div>
 
-        {/* Platform cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <PlatformCard
             name="Astra Atlas"
-            tagline="Billing · Inventory · Customers"
+            tagline="Billing - Inventory - Customers"
             icon={Building2}
             color="blue"
             baseUrl={ATLAS_URL}
@@ -428,7 +482,7 @@ export default function ConnectPage() {
           />
           <PlatformCard
             name="Astra Spark"
-            tagline="WhatsApp · Campaigns · Reels"
+            tagline="WhatsApp - Campaigns - Reels"
             icon={Zap}
             color="orange"
             baseUrl={SPARK_URL}
@@ -438,7 +492,6 @@ export default function ConnectPage() {
           />
         </div>
 
-        {/* Link Account */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -452,13 +505,36 @@ export default function ConnectPage() {
             </p>
           </div>
 
+          <div className="rounded-xl border border-white/[0.06] bg-[#080D1A] p-4 space-y-2">
+            <p className="text-xs text-slate-400">Workspace / Tenant ID</p>
+            <div className="flex gap-2">
+              <input
+                value={tenantDraft}
+                onChange={(e) => setTenantDraft(e.target.value)}
+                placeholder="default"
+                className="w-full bg-[#0B1220] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-white/20"
+              />
+              <button
+                onClick={applyTenant}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-white/[0.08] hover:bg-white/[0.12] text-white transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Current tenant: <span className="font-mono text-slate-300">{tenantId}</span>. Atlas/Spark keys are isolated per tenant.
+            </p>
+          </div>
+
           <ApiKeyInput
             label="Astra Atlas"
             icon={Building2}
             color="blue"
             placeholder="Paste your Atlas API key..."
-            instructions="Open Atlas → Settings → Integrations → Generate API Key → Copy it here"
+            instructions="Open Atlas -> Settings -> Integrations -> Generate API Key -> Copy it here"
             hasKey={creds.atlas.hasKey}
+            lastUpdatedAt={creds.atlas.lastUpdatedAt}
+            reconnectRequired={creds.atlas.hasKey && !status?.atlas.reachable}
             onSave={(key) => saveKey('atlas', key)}
             onDisconnect={() => clearKey('atlas')}
           />
@@ -468,17 +544,18 @@ export default function ConnectPage() {
             icon={Zap}
             color="orange"
             placeholder="Paste your Spark API key..."
-            instructions="Open Spark → Settings → API Access → Generate Key → Copy it here"
+            instructions="Open Spark -> Settings -> API Access -> Generate Key -> Copy it here"
             hasKey={creds.spark.hasKey}
+            lastUpdatedAt={creds.spark.lastUpdatedAt}
+            reconnectRequired={creds.spark.hasKey && !status?.spark.reachable}
             onSave={(key) => saveKey('spark', key)}
             onDisconnect={() => clearKey('spark')}
           />
 
           <p className="text-[10px] text-slate-600 leading-relaxed">
-            Keys are stored in memory on the server and cleared on restart. For permanent storage, add them to your Render environment variables as <span className="font-mono">ATLAS_API_KEY</span> and <span className="font-mono">SPARK_API_KEY</span>.
+            Keys are stored per tenant in encrypted persistent storage on the server. Existing env vars still apply for the default tenant when no saved key is present.
           </p>
         </motion.div>
-
       </div>
     </>
   )

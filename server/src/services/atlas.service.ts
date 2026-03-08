@@ -2,16 +2,16 @@ import axios from 'axios'
 import type { AtlasSnapshot } from '../types'
 import { getAtlasMock } from '../mock/atlas.mock'
 import { logger } from '../lib/logger'
-import { getAtlasApiKey } from '../lib/config-store'
+import { getTenantApiKey } from '../lib/tenant-credentials-store'
 
 const ATLAS_BASE = process.env.ATLAS_API_URL || 'http://localhost:4000'
 const DEV_MODE = process.env.DEV_MODE === 'true'
 
 export class AtlasService {
 
-  static async isReachable(): Promise<boolean> {
+  static async isReachable(tenantId: string): Promise<boolean> {
     try {
-      const key = getAtlasApiKey()
+      const key = getTenantApiKey(tenantId, 'atlas')
       const headers = key ? { Authorization: `Bearer ${key}` } : {}
       await axios.get(`${ATLAS_BASE}/api/health`, { headers, timeout: 3000 })
       return true
@@ -20,14 +20,14 @@ export class AtlasService {
     }
   }
 
-  static async getSnapshot(): Promise<AtlasSnapshot> {
+  static async getSnapshot(tenantId: string): Promise<AtlasSnapshot> {
     if (DEV_MODE) {
       logger.info('AtlasService → DEV_MODE: using mock data')
       return getAtlasMock()
     }
 
     try {
-      const key = getAtlasApiKey()
+      const key = getTenantApiKey(tenantId, 'atlas')
       const headers = key ? { Authorization: `Bearer ${key}` } : {}
 
       const [salesRes, inventoryRes, customersRes] = await Promise.all([

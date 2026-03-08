@@ -2,16 +2,16 @@ import axios from 'axios'
 import type { SparkData } from '../types'
 import { getSparkMock } from '../mock/spark.mock'
 import { logger } from '../lib/logger'
-import { getSparkApiKey } from '../lib/config-store'
+import { getTenantApiKey } from '../lib/tenant-credentials-store'
 
 const SPARK_BASE = process.env.SPARK_API_URL || 'http://localhost:3001'
 const DEV_MODE = process.env.DEV_MODE === 'true'
 
 export class SparkService {
 
-  static async isReachable(): Promise<boolean> {
+  static async isReachable(tenantId: string): Promise<boolean> {
     try {
-      const key = getSparkApiKey()
+      const key = getTenantApiKey(tenantId, 'spark')
       const headers = key ? { Authorization: `Bearer ${key}` } : {}
       await axios.get(`${SPARK_BASE}/api/health`, { headers, timeout: 3000 })
       return true
@@ -20,14 +20,14 @@ export class SparkService {
     }
   }
 
-  static async getSnapshot(): Promise<SparkData> {
+  static async getSnapshot(tenantId: string): Promise<SparkData> {
     if (DEV_MODE) {
       logger.info('SparkService → DEV_MODE: using mock data')
       return getSparkMock()
     }
 
     try {
-      const key = getSparkApiKey()
+      const key = getTenantApiKey(tenantId, 'spark')
       const headers = key ? { Authorization: `Bearer ${key}` } : {}
       const [campaignsRes, waStatsRes] = await Promise.all([
         axios.get(`${SPARK_BASE}/api/whatsapp/campaigns?limit=10`, { headers, timeout: 5000 }),
