@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Bell,
   Network,
+  Plug,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -19,15 +20,18 @@ const navItems = [
   { label: 'Chat Advisor', icon: MessageCircle, href: '/dashboard/chat' },
   { label: 'Smart Alerts', icon: Bell, href: '/dashboard/alerts', showAlertBadge: true },
   { label: 'Ecosystem', icon: Network, href: '/dashboard/ecosystem' },
+  { label: 'Connect', icon: Plug, href: '/dashboard/connect', showConnectStatus: true },
 ]
 
 function NavContent({
   pathname,
   alertCount,
+  connected,
   onLinkClick,
 }: {
   pathname: string
   alertCount: number | null
+  connected: boolean | null
   onLinkClick?: () => void
 }) {
   return (
@@ -71,6 +75,12 @@ function NavContent({
                   {badge}
                 </span>
               )}
+              {item.showConnectStatus && connected !== null && (
+                <span className={cn(
+                  'ml-auto w-2 h-2 rounded-full shrink-0',
+                  connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                )} />
+              )}
             </Link>
           )
         })}
@@ -87,13 +97,14 @@ function NavContent({
             <p className="text-xs text-slate-500">Kanpur, UP</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <a
             href={process.env.NEXT_PUBLIC_ATLAS_URL || 'https://atlas.astrastudio.in'}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-slate-500 hover:text-indigo-400 transition-colors"
+            className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-400 transition-colors"
           >
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60" />
             Atlas ↗
           </a>
           <span className="text-slate-700 text-xs">·</span>
@@ -101,10 +112,14 @@ function NavContent({
             href={process.env.NEXT_PUBLIC_SPARK_URL || 'https://spark.astrastudio.in'}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-slate-500 hover:text-indigo-400 transition-colors"
+            className="flex items-center gap-1 text-xs text-slate-500 hover:text-orange-400 transition-colors"
           >
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-500/60" />
             Spark ↗
           </a>
+          <span className="ml-auto text-[10px] text-slate-600">
+            {connected === null ? '' : connected ? 'Live' : 'Demo'}
+          </span>
         </div>
       </div>
     </>
@@ -114,19 +129,25 @@ function NavContent({
 export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean; onClose?: () => void }) {
   const pathname = usePathname()
   const [alertCount, setAlertCount] = useState<number | null>(null)
+  const [connected, setConnected] = useState<boolean | null>(null)
 
   useEffect(() => {
     fetch('/api/alerts')
       .then((r) => r.json())
       .then((d) => setAlertCount(d?.counts?.total ?? 0))
       .catch(() => {})
+
+    fetch('/api/connect')
+      .then((r) => r.json())
+      .then((d) => setConnected(d?.atlas?.reachable && d?.spark?.reachable))
+      .catch(() => setConnected(false))
   }, [])
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen w-60 bg-[#0A0F1E]/90 backdrop-blur-xl border-r border-white/[0.06] flex-col z-20">
-        <NavContent pathname={pathname} alertCount={alertCount} />
+        <NavContent pathname={pathname} alertCount={alertCount} connected={connected} />
       </aside>
 
       {/* Mobile drawer overlay */}
@@ -144,14 +165,13 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.05] transition-colors"
         >
           <X size={18} />
         </button>
-        <NavContent pathname={pathname} alertCount={alertCount} onLinkClick={onClose} />
+        <NavContent pathname={pathname} alertCount={alertCount} connected={connected} onLinkClick={onClose} />
       </aside>
 
       {/* Mobile bottom nav */}
@@ -189,6 +209,9 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
               )}
               {badge && !isActive && (
                 <span className="absolute top-2 right-[calc(50%-14px)] w-2 h-2 bg-rose-500 rounded-full" />
+              )}
+              {item.showConnectStatus && connected === false && !isActive && (
+                <span className="absolute top-2 right-[calc(50%-14px)] w-2 h-2 bg-amber-400 rounded-full" />
               )}
             </Link>
           )

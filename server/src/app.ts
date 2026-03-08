@@ -11,6 +11,7 @@ import summaryRouter from './routes/summary.routes'
 import alertsRouter from './routes/alerts.routes'
 import insightsRouter from './routes/insights.routes'
 import chatRouter from './routes/chat.routes'
+import healthRouter from './routes/health.routes'
 
 const app = express()
 
@@ -38,6 +39,7 @@ app.use('/api/summary', summaryRouter)
 app.use('/api/alerts', alertsRouter)
 app.use('/api/insights', insightsRouter)
 app.use('/api/chat', chatRouter)
+app.use('/api/health', healthRouter)
 
 // 404 + error handlers (must be last)
 app.use(notFound)
