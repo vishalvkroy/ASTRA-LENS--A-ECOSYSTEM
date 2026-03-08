@@ -132,7 +132,7 @@ export interface Alert {
   title: string
   description: string
   action?: string
-  actionLink?: string
+  actionLink?: string | null
   createdAt: string
 }
 
