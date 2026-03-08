@@ -98,15 +98,10 @@ function NavContent({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={process.env.NEXT_PUBLIC_ATLAS_URL || 'https://atlas.astrastudio.in'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-400 transition-colors"
-          >
+          <span className="flex items-center gap-1 text-xs text-slate-500 cursor-default select-none">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60" />
-            Atlas ↗
-          </a>
+            Atlas
+          </span>
           <span className="text-slate-700 text-xs">·</span>
           <a
             href={process.env.NEXT_PUBLIC_SPARK_URL || 'https://spark.astrastudio.in'}

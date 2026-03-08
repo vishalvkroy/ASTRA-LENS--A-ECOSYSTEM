@@ -64,7 +64,7 @@ function StatusBadge({ reachable, usingMock }: { reachable: boolean; usingMock: 
 }
 
 function PlatformCard({
-  name, tagline, icon: Icon, color, baseUrl, status, actions, delay,
+  name, tagline, icon: Icon, color, baseUrl, status, actions, delay, isDesktopApp,
 }: {
   name: string
   tagline: string
@@ -74,6 +74,7 @@ function PlatformCard({
   status: { reachable: boolean; url: string; usingMock: boolean } | null
   actions: { label: string; icon: any; path: string }[]
   delay: number
+  isDesktopApp?: boolean
 }) {
   const colors = {
     blue: {
@@ -151,10 +152,23 @@ function PlatformCard({
 
       {/* Quick actions */}
       <div>
-        <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-3">Quick Actions</p>
+        <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-3">
+          {isDesktopApp ? 'Available in App' : 'Quick Actions'}
+        </p>
         <div className="grid grid-cols-2 gap-2">
           {actions.map((action) => {
             const AIcon = action.icon
+            if (isDesktopApp) {
+              return (
+                <div
+                  key={action.path}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/[0.06] text-xs text-slate-500 cursor-default select-none"
+                >
+                  <AIcon size={13} className="shrink-0" />
+                  <span className="truncate">{action.label}</span>
+                </div>
+              )
+            }
             return (
               <a
                 key={action.path}
@@ -176,18 +190,32 @@ function PlatformCard({
       </div>
 
       {/* Open platform button */}
-      <a
-        href={baseUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={cn(
-          'flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium border transition-all duration-200',
-          c.bg, c.border, c.text, c.hover
-        )}
-      >
-        <ExternalLink size={13} />
-        Open {name}
-      </a>
+      {isDesktopApp ? (
+        <div className={cn(
+          'flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium border cursor-default select-none',
+          c.bg, c.border, c.text
+        )}>
+          <svg xmlns="http://www.w3.org/2000/svg" width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          Desktop Application
+        </div>
+      ) : (
+        <a
+          href={baseUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            'flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium border transition-all duration-200',
+            c.bg, c.border, c.text, c.hover
+          )}
+        >
+          <ExternalLink size={13} />
+          Open {name}
+        </a>
+      )}
     </motion.div>
   )
 }
@@ -269,6 +297,7 @@ export default function ConnectPage() {
             status={status?.atlas ?? null}
             actions={atlasActions}
             delay={0.1}
+            isDesktopApp
           />
           <PlatformCard
             name="Astra Spark"

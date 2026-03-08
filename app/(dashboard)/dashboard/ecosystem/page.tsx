@@ -6,7 +6,6 @@ import Topbar from '@/components/layout/Topbar'
 import ProductCard from '@/components/ecosystem/ProductCard'
 import FlowArrow from '@/components/ecosystem/FlowArrow'
 
-const ATLAS_URL = process.env.NEXT_PUBLIC_ATLAS_URL || 'https://atlas.astrastudio.in'
 const SPARK_URL = process.env.NEXT_PUBLIC_SPARK_URL || 'https://spark.astrastudio.in'
 
 const products = [
@@ -17,7 +16,8 @@ const products = [
     icon: Building2,
     features: ['Billing & Invoices', 'Inventory Management', 'Customer Database', 'GST Reports'],
     stats: [{ label: 'Customers', value: '847' }, { label: 'Invoices', value: '2,341' }],
-    link: ATLAS_URL,
+    link: null as string | null,
+    isDesktopApp: true,
   },
   {
     name: 'Astra Lens',
@@ -154,14 +154,9 @@ export default function EcosystemPage() {
           </p>
           <p className="text-slate-400 text-sm mt-1">No consultants. No complexity. Just clarity.</p>
           <div className="flex items-center justify-center gap-3 mt-5">
-            <a
-              href={ATLAS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-5 py-2 rounded-lg border border-blue-500/30 text-blue-400 text-sm font-medium hover:bg-blue-500/10 transition-colors"
-            >
-              Explore Atlas →
-            </a>
+            <span className="px-5 py-2 rounded-lg border border-blue-500/30 text-blue-400/50 text-sm font-medium cursor-default select-none">
+              Atlas (Desktop App)
+            </span>
             <a
               href={SPARK_URL}
               target="_blank"

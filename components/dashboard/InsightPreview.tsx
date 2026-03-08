@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertTriangle, Zap, ArrowRight } from 'lucide-react'
+import { AlertTriangle, Zap, ArrowRight, Monitor } from 'lucide-react'
 
 const previewInsights = [
   {
@@ -7,8 +7,9 @@ const previewInsights = [
     type: 'warning' as const,
     title: 'Basmati Rice runs out in 3 days',
     body: 'Sirf 5 bags bache hain. Friday se pehle restock kar lijiye warna sales miss ho sakti hai.',
-    action: 'Restock Now',
-    actionLink: 'https://atlas.astrastudio.in/inventory',
+    action: 'Restock in Atlas',
+    actionLink: null as string | null,
+    isDesktopAction: true,
   },
   {
     id: 'p2',
@@ -17,6 +18,7 @@ const previewInsights = [
     body: 'Re-engagement campaign launch karne se 15-20% customers wapas aa sakte hain. Holi perfect timing hai.',
     action: 'Launch Campaign',
     actionLink: 'https://spark.astrastudio.in/whatsapp/campaigns/new',
+    isDesktopAction: false,
   },
 ]
 
@@ -68,14 +70,21 @@ export default function InsightPreview() {
                 <p className="text-sm font-medium text-white leading-snug">{insight.title}</p>
                 <p className="text-xs text-slate-400 mt-1 leading-relaxed">{insight.body}</p>
                 {insight.action && (
-                  <a
-                    href={insight.actionLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center gap-1 text-xs font-medium mt-2 transition-colors ${config.action}`}
-                  >
-                    {insight.action} <ArrowRight size={10} />
-                  </a>
+                  insight.isDesktopAction ? (
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium mt-2 ${config.action} opacity-70`}>
+                      <Monitor size={10} />
+                      {insight.action}
+                    </span>
+                  ) : (
+                    <a
+                      href={insight.actionLink!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`inline-flex items-center gap-1 text-xs font-medium mt-2 transition-colors ${config.action}`}
+                    >
+                      {insight.action} <ArrowRight size={10} />
+                    </a>
+                  )
                 )}
               </div>
             </div>

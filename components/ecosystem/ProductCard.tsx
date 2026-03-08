@@ -8,8 +8,9 @@ interface ProductCardProps {
   icon: LucideIcon
   features: string[]
   stats: { label: string; value: string }[]
-  link: string
+  link: string | null
   isCenter?: boolean
+  isDesktopApp?: boolean
   delay?: number
 }
 
@@ -46,6 +47,7 @@ export default function ProductCard({
   stats,
   link,
   isCenter,
+  isDesktopApp,
   delay = 0,
 }: ProductCardProps) {
   const c = colorMap[color]
@@ -92,14 +94,20 @@ export default function ProductCard({
 
       {/* Link */}
       <div className="mt-4">
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn('text-xs font-medium transition-colors hover:underline', c.link)}
-        >
-          Open {name} ↗
-        </a>
+        {isDesktopApp || !link ? (
+          <span className={cn('text-xs font-medium opacity-50 cursor-default select-none', c.link)}>
+            Desktop Application
+          </span>
+        ) : (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn('text-xs font-medium transition-colors hover:underline', c.link)}
+          >
+            Open {name} ↗
+          </a>
+        )}
       </div>
     </div>
   )

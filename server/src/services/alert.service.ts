@@ -20,8 +20,8 @@ export class AlertService {
           category: 'inventory',
           title: `Low Stock: ${item.name}`,
           description: `Only ${item.stock} ${item.unit} remaining. At current sales rate, stock runs out in approximately ${days} day${days === 1 ? '' : 's'}.`,
-          action: 'Restock Now',
-          actionLink: 'https://atlas.astrastudio.in/inventory',
+          action: 'Restock in Atlas',
+          actionLink: null,
           createdAt: new Date().toISOString(),
         })
       } else if (days <= 7) {
@@ -31,8 +31,8 @@ export class AlertService {
           category: 'inventory',
           title: `Stock Running Low: ${item.name}`,
           description: `${item.stock} ${item.unit} remaining — approximately ${days} days left. Consider restocking soon.`,
-          action: 'View Inventory',
-          actionLink: 'https://atlas.astrastudio.in/inventory',
+          action: 'View in Atlas',
+          actionLink: null,
           createdAt: new Date().toISOString(),
         })
       }

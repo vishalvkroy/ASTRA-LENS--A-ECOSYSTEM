@@ -1,4 +1,4 @@
-import { ChevronRight, Package, Users, TrendingDown, Megaphone, CreditCard } from 'lucide-react'
+import { ChevronRight, Package, Users, TrendingDown, Megaphone, CreditCard, Monitor } from 'lucide-react'
 import type { Alert } from '@/app/api/alerts/route'
 import { cn } from '@/lib/utils'
 
@@ -65,19 +65,29 @@ export default function AlertCard({ alert, index }: AlertCardProps) {
       <p className="text-xs text-slate-400 mt-1 leading-relaxed">{alert.description}</p>
 
       {/* Action */}
-      {alert.action && alert.actionLink && (
-        <a
-          href={alert.actionLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            'mt-3 inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors',
+      {alert.action && (
+        alert.actionLink ? (
+          <a
+            href={alert.actionLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              'mt-3 inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors',
+              config.action
+            )}
+          >
+            {alert.action}
+            <ChevronRight size={12} />
+          </a>
+        ) : (
+          <span className={cn(
+            'mt-3 inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 opacity-60 cursor-default select-none',
             config.action
-          )}
-        >
-          {alert.action}
-          <ChevronRight size={12} />
-        </a>
+          )}>
+            <Monitor size={11} />
+            {alert.action}
+          </span>
+        )
       )}
     </div>
   )
