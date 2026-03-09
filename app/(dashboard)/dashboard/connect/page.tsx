@@ -1,81 +1,72 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Building2, Zap, CheckCircle2, XCircle, RefreshCw,
-  LayoutDashboard, Package, Users, FileText, BarChart3,
-  MessageSquare, Megaphone, Video, Calendar, CreditCard,
-  ExternalLink, AlertTriangle, Key, Eye, EyeOff, Link2, Unlink,
-  Loader2, Wifi, WifiOff, ChevronRight, Copy, Check, Info,
+  Loader2, ChevronDown, ChevronRight, Copy, Check,
+  Unlink, AlertTriangle, ArrowRight, Wifi, WifiOff,
+  Shield, Key,
 } from 'lucide-react'
 import Topbar from '@/components/layout/Topbar'
 import { cn } from '@/lib/utils'
 
-const SPARK_WEB_URL = process.env.NEXT_PUBLIC_SPARK_URL || 'https://spark.astrastudio.in'
-const TENANT_ID_PATTERN = /^[a-zA-Z0-9._-]{2,64}$/
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+interface CredStatus {
+  hasKey: boolean
+  lastUpdatedAt: string | null
+  url: string | null
+}
 
-interface ServiceStatus {
-  tenantId?: string
-  devMode: boolean
-  atlas: { reachable: boolean; url: string; usingMock: boolean; configured: boolean }
-  spark: { reachable: boolean; url: string; usingMock: boolean; configured: boolean }
+interface SparkCredStatus extends CredStatus {
+  businessId: string | null
 }
 
 interface Credentials {
   tenantId?: string
-  atlas: { hasKey: boolean; lastUpdatedAt?: string | null; url?: string | null }
-  spark: { hasKey: boolean; lastUpdatedAt?: string | null; url?: string | null; businessId?: string | null }
+  atlas: CredStatus
+  spark: SparkCredStatus
 }
 
-// ── Small helpers ──────────────────────────────────────────────────────────────
-
-function normalizeTenantId(raw: string): string {
-  const value = raw.trim().toLowerCase()
-  if (!value || !TENANT_ID_PATTERN.test(value)) return 'default'
-  return value
+interface ServiceStatus {
+  tenantId?: string
+  devMode: boolean
+  atlas: { reachable: boolean; url: string | null; usingMock: boolean; configured: boolean }
+  spark: { reachable: boolean; url: string | null; usingMock: boolean; configured: boolean }
 }
 
-function StatusBadge({
-  reachable, configured, usingMock,
-}: { reachable: boolean; configured: boolean; usingMock: boolean }) {
-  if (reachable) {
-    return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        Live Data
-      </span>
-    )
-  }
-  if (configured && !reachable) {
-    return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-full">
-        <WifiOff size={10} />
-        Unreachable
-      </span>
-    )
-  }
-  if (usingMock) {
-    return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-        Demo Data
-      </span>
-    )
-  }
-  return (
-    <span className="flex items-center gap-1.5 text-xs font-medium text-slate-400 bg-white/[0.04] border border-white/[0.08] px-2.5 py-1 rounded-full">
-      <XCircle size={10} />
-      Not Connected
-    </span>
-  )
+// ── Client-side key validation ────────────────────────────────────────────────
+
+function detectKeyService(key: string): 'atlas' | 'spark' | 'wrong-atlas' | 'wrong-spark' | null {
+  const k = key.trim()
+  if (k.startsWith('atlens1_')) return 'atlas'
+  if (k.startsWith('splens1_')) return 'spark'
+  // Helpful: detect if user pasted the wrong service's key
+  if (k.startsWith('atlens')) return 'wrong-atlas'
+  if (k.startsWith('splens')) return 'wrong-spark'
+  return null
 }
 
-// ── Copy Button ────────────────────────────────────────────────────────────────
+function isValidKeyFormat(key: string, expectedService: 'atlas' | 'spark'): boolean {
+  if (expectedService === 'atlas') return key.trim().startsWith('atlens1_') && key.trim().length > 10
+  return key.trim().startsWith('splens1_') && key.trim().length > 10
+}
 
-function CopyButton({ text }: { text: string }) {
+// ── Small helpers ─────────────────────────────────────────────────────────────
+
+function timeSince(isoDate: string | null | undefined): string {
+  if (!isoDate) return 'previously'
+  const diff = Date.now() - new Date(isoDate).getTime()
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
   function copy() {
     navigator.clipboard.writeText(text).then(() => {
@@ -86,667 +77,394 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded border border-white/[0.06] hover:border-white/20"
+      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/[0.08] hover:border-white/20 px-2.5 py-1.5 rounded-lg transition-all"
     >
       {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-      {copied ? 'Copied!' : 'Copy'}
+      {copied ? 'Copied!' : label}
     </button>
   )
 }
 
-// ── Field Input ────────────────────────────────────────────────────────────────
+// ── ConnectionCard ────────────────────────────────────────────────────────────
 
-function Field({
-  label, value, onChange, placeholder, mono, secret, hint, disabled,
+function ConnectionCard({
+  service,
+  name,
+  tagline,
+  icon: Icon,
+  color,
+  keyPrefix,
+  keyPlaceholder,
+  instructions,
+  helpSteps,
+  creds,
+  status,
+  tenantId,
+  onRefresh,
 }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  mono?: boolean
-  secret?: boolean
-  hint?: string
-  disabled?: boolean
-}) {
-  const [show, setShow] = useState(false)
-  return (
-    <div className="space-y-1.5">
-      <label className="text-[11px] text-slate-400 font-medium">{label}</label>
-      <div className="relative">
-        <input
-          type={secret && !show ? 'password' : 'text'}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          disabled={disabled}
-          className={cn(
-            'w-full bg-[#080D1A] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white',
-            'placeholder:text-slate-600 focus:outline-none focus:border-white/20 transition-colors',
-            mono && 'font-mono',
-            secret && 'pr-8',
-            disabled && 'opacity-50 cursor-not-allowed'
-          )}
-        />
-        {secret && (
-          <button
-            type="button"
-            onClick={() => setShow(!show)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-          >
-            {show ? <EyeOff size={12} /> : <Eye size={12} />}
-          </button>
-        )}
-      </div>
-      {hint && <p className="text-[11px] text-slate-500 leading-relaxed">{hint}</p>}
-    </div>
-  )
-}
-
-// ── Test Connection Button ─────────────────────────────────────────────────────
-
-function TestButton({
-  service, tenantId, onResult,
-}: { service: 'atlas' | 'spark'; tenantId: string; onResult: (ok: boolean) => void }) {
-  const [testing, setTesting] = useState(false)
-  const [result, setResult] = useState<boolean | null>(null)
-
-  async function test() {
-    setTesting(true)
-    setResult(null)
-    try {
-      const res = await fetch('/api/connect/setup', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify({ service }),
-      })
-      const data = await res.json()
-      setResult(data.reachable === true)
-      onResult(data.reachable === true)
-    } catch {
-      setResult(false)
-      onResult(false)
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-3">
-      <button
-        onClick={test}
-        disabled={testing}
-        className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.08] px-3 py-2 rounded-lg transition-all"
-      >
-        {testing ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
-        {testing ? 'Testing...' : 'Test Connection'}
-      </button>
-      {result === true && (
-        <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-          <CheckCircle2 size={13} /> Connected!
-        </span>
-      )}
-      {result === false && (
-        <span className="flex items-center gap-1.5 text-xs text-rose-400">
-          <XCircle size={13} /> Unreachable
-        </span>
-      )}
-    </div>
-  )
-}
-
-// ── Atlas Setup Section ────────────────────────────────────────────────────────
-
-function AtlasSetup({
-  tenantId, creds, onSaved,
-}: {
-  tenantId: string
-  creds: Credentials
-  onSaved: () => void
-}) {
-  const [url, setUrl] = useState(creds.atlas.url || '')
-  const [key, setKey] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [testOk, setTestOk] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    setUrl(creds.atlas.url || '')
-    setKey('')
-    setTestOk(null)
-  }, [creds.atlas.url, creds.atlas.hasKey])
-
-  async function save() {
-    if (!url.trim()) { setError('Server URL is required'); return }
-    setSaving(true)
-    setError('')
-    try {
-      const body: any = { tenantId, atlasUrl: url.trim() }
-      if (key.trim()) body.atlasApiKey = key.trim()
-      const res = await fetch('/api/connect/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setKey('')
-        onSaved()
-      } else {
-        setError(data.error || 'Save failed')
-      }
-    } catch {
-      setError('Backend unreachable. Is the server running?')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function disconnect() {
-    setSaving(true)
-    try {
-      await fetch('/api/connect/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify({ tenantId, atlasApiKey: '', atlasUrl: '' }),
-      })
-      onSaved()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.2 }}
-      className="bg-[#0F1629] rounded-2xl border border-blue-500/20 p-5 space-y-5"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-            <Building2 size={18} className="text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-white">Astra Atlas</p>
-            <p className="text-xs text-slate-500">Billing · Inventory · Customers</p>
-          </div>
-        </div>
-        {creds.atlas.hasKey && (
-          <span className="text-xs text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-            <CheckCircle2 size={11} /> Key Saved
-          </span>
-        )}
-      </div>
-
-      {/* How to get key */}
-      <div className="bg-blue-500/5 border border-blue-500/15 rounded-xl p-4 space-y-2">
-        <p className="text-xs font-medium text-blue-400 flex items-center gap-2">
-          <Info size={12} /> How to get your Atlas API key
-        </p>
-        <ol className="space-y-1">
-          {[
-            'Open Astra Atlas on your desktop',
-            'Go to Settings → Integrations',
-            'Click "Generate API Key"',
-            'Copy the key and paste it below',
-          ].map((step, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
-              <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 text-[10px] flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
-              {step}
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      {/* Fields */}
-      <div className="space-y-3">
-        <Field
-          label="Atlas Server URL"
-          value={url}
-          onChange={setUrl}
-          placeholder="http://your-atlas-server:4000"
-          mono
-          hint="The URL where your Atlas server is running. For local: http://localhost:4000"
-        />
-        <Field
-          label={creds.atlas.hasKey ? 'API Key (leave blank to keep current)' : 'API Key'}
-          value={key}
-          onChange={setKey}
-          placeholder={creds.atlas.hasKey ? '••••• leave blank to keep saved key •••••' : 'Paste Atlas API key from Settings → Integrations'}
-          secret
-          hint={
-            creds.atlas.lastUpdatedAt
-              ? `Key last updated: ${new Date(creds.atlas.lastUpdatedAt).toLocaleString('en-IN')}`
-              : undefined
-          }
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
-        >
-          {saving ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />}
-          {saving ? 'Saving...' : 'Save & Connect'}
-        </button>
-
-        {creds.atlas.hasKey && (
-          <>
-            <TestButton service="atlas" tenantId={tenantId} onResult={setTestOk} />
-            <button
-              onClick={disconnect}
-              disabled={saving}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-400 transition-colors ml-auto"
-            >
-              <Unlink size={12} /> Disconnect
-            </button>
-          </>
-        )}
-      </div>
-
-      {error && <p className="text-xs text-rose-400 flex items-center gap-1.5"><AlertTriangle size={11} />{error}</p>}
-    </motion.div>
-  )
-}
-
-// ── Spark Setup Section ────────────────────────────────────────────────────────
-
-function SparkSetup({
-  tenantId, creds, onSaved,
-}: {
-  tenantId: string
-  creds: Credentials
-  onSaved: () => void
-}) {
-  const [url, setUrl] = useState(creds.spark.url || 'https://spark.astrastudio.in')
-  const [businessId, setBusinessId] = useState(creds.spark.businessId || '')
-  const [key, setKey] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [testOk, setTestOk] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    setUrl(creds.spark.url || 'https://spark.astrastudio.in')
-    setBusinessId(creds.spark.businessId || '')
-    setKey('')
-    setTestOk(null)
-  }, [creds.spark.url, creds.spark.businessId, creds.spark.hasKey])
-
-  async function save() {
-    if (!url.trim()) { setError('Server URL is required'); return }
-    if (!businessId.trim()) { setError('Business ID is required'); return }
-    if (!creds.spark.hasKey && !key.trim()) { setError('Integration key is required'); return }
-
-    setSaving(true)
-    setError('')
-    try {
-      const body: any = {
-        tenantId,
-        sparkUrl: url.trim(),
-        sparkBusinessId: businessId.trim(),
-      }
-      if (key.trim()) body.sparkApiKey = key.trim()
-
-      const res = await fetch('/api/connect/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setKey('')
-        onSaved()
-      } else {
-        setError(data.error || 'Save failed')
-      }
-    } catch {
-      setError('Backend unreachable. Is the server running?')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function disconnect() {
-    setSaving(true)
-    try {
-      await fetch('/api/connect/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify({ tenantId, sparkApiKey: '', sparkUrl: '', sparkBusinessId: '' }),
-      })
-      onSaved()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const setupSteps = [
-    {
-      num: 1,
-      title: 'Add the integration endpoint to Spark',
-      body: (
-        <p className="text-xs text-slate-400 leading-relaxed">
-          In your Spark server, add a{' '}
-          <code className="bg-white/[0.05] px-1 py-0.5 rounded text-orange-300">LENS_API_KEY</code>{' '}
-          to <code className="bg-white/[0.05] px-1 py-0.5 rounded text-orange-300">apps/api/.env</code>.
-          This is the shared secret Lens uses to authenticate when reading your Spark data.
-          Use any secure random string — 32+ characters recommended.
-        </p>
-      ),
-    },
-    {
-      num: 2,
-      title: 'Apply the PROMPT_FOR_SPARK.md code to Spark',
-      body: (
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Follow the steps in{' '}
-          <code className="bg-white/[0.05] px-1 py-0.5 rounded text-orange-300">PROMPT_FOR_SPARK.md</code>{' '}
-          in this repo to add the Lens snapshot endpoint to Spark. This creates{' '}
-          <code className="bg-white/[0.05] px-1 py-0.5 rounded text-orange-300">GET /api/lens/snapshot</code>{' '}
-          which Lens calls to read your campaign and WhatsApp data.
-        </p>
-      ),
-    },
-    {
-      num: 3,
-      title: 'Find your Spark Business ID',
-      body: (
-        <p className="text-xs text-slate-400 leading-relaxed">
-          In Spark, go to <strong className="text-white">Settings → Business</strong>.
-          Copy the Business ID (UUID format:{' '}
-          <code className="bg-white/[0.05] px-1 py-0.5 rounded text-slate-300">xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>).
-          Paste it in the Business ID field below.
-        </p>
-      ),
-    },
-    {
-      num: 4,
-      title: 'Enter your details below and save',
-      body: (
-        <p className="text-xs text-slate-400">
-          Enter the Spark server URL, your Business ID, and the same{' '}
-          <code className="bg-white/[0.05] px-1 py-0.5 rounded text-orange-300">LENS_API_KEY</code>{' '}
-          value you set in Spark. Click Save.
-        </p>
-      ),
-    },
-  ]
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.3 }}
-      className="bg-[#0F1629] rounded-2xl border border-orange-500/20 p-5 space-y-5"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
-            <Zap size={18} className="text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-white">Astra Spark</p>
-            <p className="text-xs text-slate-500">WhatsApp · Campaigns · Reels</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {creds.spark.hasKey && (
-            <span className="text-xs text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-              <CheckCircle2 size={11} /> Key Saved
-            </span>
-          )}
-          <a
-            href={SPARK_WEB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1 transition-colors"
-          >
-            Open Spark <ExternalLink size={10} />
-          </a>
-        </div>
-      </div>
-
-      {/* Setup guide */}
-      <div className="bg-orange-500/5 border border-orange-500/15 rounded-xl p-4 space-y-4">
-        <p className="text-xs font-medium text-orange-400 flex items-center gap-2">
-          <Info size={12} /> Setup guide — Connecting Spark to Lens
-        </p>
-        <div className="space-y-4">
-          {setupSteps.map((step) => (
-            <div key={step.num} className="flex gap-3">
-              <span className="w-5 h-5 rounded-full bg-orange-500/20 text-orange-400 text-[10px] flex items-center justify-center shrink-0 mt-0.5 font-bold">
-                {step.num}
-              </span>
-              <div className="space-y-1 flex-1">
-                <p className="text-xs font-medium text-white">{step.title}</p>
-                {step.body}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Fields */}
-      <div className="space-y-3">
-        <Field
-          label="Spark Server URL"
-          value={url}
-          onChange={setUrl}
-          placeholder="https://spark.astrastudio.in"
-          mono
-          hint="The URL where your Spark API server is running"
-        />
-        <Field
-          label="Spark Business ID"
-          value={businessId}
-          onChange={setBusinessId}
-          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          mono
-          hint="Find this in Spark → Settings → Business → Business ID (UUID)"
-        />
-        <Field
-          label={
-            creds.spark.hasKey
-              ? 'Integration Key (LENS_API_KEY) — leave blank to keep current'
-              : 'Integration Key (LENS_API_KEY)'
-          }
-          value={key}
-          onChange={setKey}
-          placeholder={
-            creds.spark.hasKey
-              ? '••••• leave blank to keep saved key •••••'
-              : 'The LENS_API_KEY value set in your Spark .env'
-          }
-          secret
-          hint={
-            creds.spark.lastUpdatedAt
-              ? `Key last updated: ${new Date(creds.spark.lastUpdatedAt).toLocaleString('en-IN')}`
-              : 'This must match the LENS_API_KEY in your Spark server .env'
-          }
-        />
-      </div>
-
-      {/* Config summary if already connected */}
-      {creds.spark.businessId && (
-        <div className="bg-[#080D1A] rounded-lg px-3 py-2.5 border border-white/[0.05] space-y-1">
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest">Current Config</p>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-400">Business ID</span>
-            <span className="text-[11px] font-mono text-slate-300 truncate ml-2">{creds.spark.businessId}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white transition-colors"
-        >
-          {saving ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />}
-          {saving ? 'Saving...' : 'Save & Connect'}
-        </button>
-
-        {creds.spark.hasKey && (
-          <>
-            <TestButton service="spark" tenantId={tenantId} onResult={setTestOk} />
-            <button
-              onClick={disconnect}
-              disabled={saving}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-400 transition-colors ml-auto"
-            >
-              <Unlink size={12} /> Disconnect
-            </button>
-          </>
-        )}
-      </div>
-
-      {error && (
-        <p className="text-xs text-rose-400 flex items-center gap-1.5">
-          <AlertTriangle size={11} />{error}
-        </p>
-      )}
-    </motion.div>
-  )
-}
-
-// ── Quick action grids shown in the status cards ───────────────────────────────
-
-const atlasActions = [
-  { label: 'Dashboard', icon: LayoutDashboard },
-  { label: 'Inventory', icon: Package },
-  { label: 'Customers', icon: Users },
-  { label: 'Invoices', icon: FileText },
-  { label: 'Sales Report', icon: BarChart3 },
-  { label: 'GST Report', icon: FileText },
-]
-
-const sparkActions = [
-  { label: 'Campaigns', icon: Megaphone, path: '/whatsapp/campaigns' },
-  { label: 'New Campaign', icon: MessageSquare, path: '/whatsapp/campaigns/new' },
-  { label: 'Reel Scripts', icon: Video, path: '/reelscript' },
-  { label: 'Schedule Post', icon: Calendar, path: '/social/schedule' },
-  { label: 'Analytics', icon: BarChart3, path: '/analytics' },
-  { label: 'Buy Credits', icon: CreditCard, path: '/whatsapp/bundles' },
-]
-
-// ── Status Overview Cards ──────────────────────────────────────────────────────
-
-function ServiceCard({
-  name, tagline, icon: Icon, color, status, actions, baseUrl, delay, isDesktopApp,
-}: {
+  service: 'atlas' | 'spark'
   name: string
   tagline: string
   icon: any
   color: 'blue' | 'orange'
+  keyPrefix: string
+  keyPlaceholder: string
+  instructions: string
+  helpSteps: string[]
+  creds: CredStatus | SparkCredStatus
   status: ServiceStatus['atlas'] | null
-  actions: { label: string; icon: any; path?: string }[]
-  baseUrl?: string
-  delay: number
-  isDesktopApp?: boolean
+  tenantId: string
+  onRefresh: () => void
 }) {
-  const c = color === 'blue' ? {
-    border: 'border-blue-500/20',
-    gradient: 'from-blue-500 to-blue-600',
-    text: 'text-blue-400',
-    bg: 'bg-blue-500/10',
-    hover: 'hover:bg-blue-500/10 hover:text-blue-300',
-  } : {
-    border: 'border-orange-500/20',
-    gradient: 'from-orange-500 to-orange-600',
-    text: 'text-orange-400',
-    bg: 'bg-orange-500/10',
-    hover: 'hover:bg-orange-500/10 hover:text-orange-300',
+  const [key, setKey] = useState('')
+  const [connecting, setConnecting] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [validationError, setValidationError] = useState('')
+
+  const c = color === 'blue'
+    ? { border: 'border-blue-500/20', icon: 'from-blue-500 to-blue-600', text: 'text-blue-400', bg: 'bg-blue-500/10', ring: 'focus:border-blue-500/40', btn: 'bg-blue-500 hover:bg-blue-600', accent: 'border-blue-500/30 bg-blue-500/5' }
+    : { border: 'border-orange-500/20', icon: 'from-orange-500 to-orange-600', text: 'text-orange-400', bg: 'bg-orange-500/10', ring: 'focus:border-orange-500/40', btn: 'bg-orange-500 hover:bg-orange-600', accent: 'border-orange-500/30 bg-orange-500/5' }
+
+  const isConnected = creds.hasKey
+  const isReachable = status?.reachable ?? false
+
+  function handleKeyChange(val: string) {
+    setKey(val)
+    setValidationError('')
+    setResult(null)
+
+    if (!val.trim()) return
+
+    const detected = detectKeyService(val)
+    if (detected === 'wrong-atlas' || detected === 'wrong-spark') {
+      const wrongName = detected === 'wrong-atlas' ? 'Atlas' : 'Spark'
+      const rightName = service === 'atlas' ? 'Atlas' : 'Spark'
+      if (wrongName !== rightName) {
+        setValidationError(`This looks like a ${wrongName} key. Paste it in the ${wrongName} card instead.`)
+      }
+    }
+  }
+
+  async function handleConnect() {
+    const trimmed = key.trim()
+    if (!trimmed) { setValidationError('Paste your connection key first'); return }
+
+    if (!isValidKeyFormat(trimmed, service)) {
+      setValidationError(
+        `${name} keys start with ${keyPrefix}. Check you copied the full key.`
+      )
+      return
+    }
+
+    setConnecting(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/connect/connect-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ connectionKey: trimmed }),
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        setResult({ ok: false, message: data.message || 'Connection failed. Check your key and try again.' })
+        return
+      }
+
+      if (data.reachable) {
+        setResult({ ok: true, message: 'Connected successfully!' })
+      } else {
+        setResult({
+          ok: false,
+          message: 'Key saved but service is unreachable right now. Check that the server is running.',
+        })
+      }
+
+      setKey('')
+      onRefresh()
+    } catch {
+      setResult({ ok: false, message: 'Could not reach Lens server. Is it running?' })
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true)
+    try {
+      await fetch('/api/connect/connect-key', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ service }),
+      })
+      setResult(null)
+      onRefresh()
+    } finally {
+      setDisconnecting(false)
+    }
   }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.4 }}
-      className={cn('bg-[#0F1629] rounded-2xl border p-5 flex flex-col gap-4', c.border)}
+      className={cn('bg-[#0F1629] rounded-2xl border overflow-hidden', c.border)}
     >
-      <div className="flex items-start justify-between">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-5 pb-4">
         <div className="flex items-center gap-3">
-          <div className={cn('w-9 h-9 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg', c.gradient)}>
-            <Icon size={18} className="text-white" />
+          <div className={cn('w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg shrink-0', c.icon)}>
+            <Icon size={20} className="text-white" />
           </div>
           <div>
             <p className="text-sm font-semibold text-white">{name}</p>
             <p className="text-xs text-slate-500">{tagline}</p>
           </div>
         </div>
-        {status ? (
-          <StatusBadge
-            reachable={status.reachable}
-            configured={status.configured}
-            usingMock={status.usingMock}
-          />
+
+        {/* Status badge */}
+        {isConnected ? (
+          isReachable ? (
+            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live Data
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full shrink-0">
+              <WifiOff size={10} />
+              Key Saved
+            </span>
+          )
         ) : (
-          <div className="w-20 h-6 rounded-full bg-white/[0.04] animate-pulse" />
+          <span className="flex items-center gap-1.5 text-xs text-slate-500 bg-white/[0.03] border border-white/[0.06] px-2.5 py-1 rounded-full shrink-0">
+            <XCircle size={10} />
+            Not Connected
+          </span>
         )}
       </div>
 
-      {status && (
-        <div className="bg-[#080D1A] rounded-lg px-3 py-2 border border-white/[0.05]">
-          <p className="text-[10px] text-slate-500 mb-0.5 uppercase tracking-widest">API Endpoint</p>
-          <p className="text-xs text-slate-300 font-mono truncate">{status.url}</p>
-        </div>
-      )}
-
-      {status && (
-        <div className="flex items-center gap-2">
-          {status.reachable
-            ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
-            : <AlertTriangle size={13} className="text-amber-400 shrink-0" />}
-          <p className="text-xs text-slate-400">
-            {status.reachable
-              ? 'Connected — reading live data from your account'
-              : status.configured
-              ? 'Configured but unreachable — check if service is running'
-              : 'Not connected — use the setup below to connect'}
-          </p>
-        </div>
-      )}
-
-      <div className="border-t border-white/[0.05] pt-3">
-        <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-2">
-          {isDesktopApp ? 'Available in Desktop App' : 'Quick Actions'}
-        </p>
-        <div className="grid grid-cols-3 gap-1.5">
-          {actions.map((action, i) => {
-            const AIcon = action.icon
-            if (isDesktopApp || !action.path || !baseUrl) {
-              return (
-                <div key={i} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-white/[0.04] text-[11px] text-slate-500 cursor-default select-none">
-                  <AIcon size={11} className="shrink-0" />
-                  <span className="truncate">{action.label}</span>
+      <div className="px-5 pb-5 space-y-4">
+        <AnimatePresence mode="wait">
+          {isConnected && !reconnecting ? (
+            /* ── Connected state ── */
+            <motion.div
+              key="connected"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="space-y-3"
+            >
+              <div className={cn('rounded-xl border p-4 flex items-start gap-3', c.accent)}>
+                <CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-sm font-medium', c.text)}>
+                    {name} Connected
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {isReachable
+                      ? 'Reading live data from your account'
+                      : 'Server may be offline — Lens is using demo data until it reconnects'}
+                  </p>
+                  {creds.lastUpdatedAt && (
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      Key saved {timeSince(creds.lastUpdatedAt)}
+                    </p>
+                  )}
+                  {creds.url && (
+                    <p className="text-[11px] font-mono text-slate-500 mt-0.5 truncate">
+                      {creds.url}
+                    </p>
+                  )}
                 </div>
-              )
-            }
-            return (
-              <a
-                key={i}
-                href={`${baseUrl}${action.path}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn('flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-white/[0.04] text-[11px] text-slate-400 transition-all', c.hover)}
-              >
-                <AIcon size={11} className="shrink-0" />
-                <span className="truncate">{action.label}</span>
-              </a>
-            )
-          })}
-        </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => { setReconnecting(true); setResult(null) }}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-2 rounded-lg transition-all"
+                >
+                  <RefreshCw size={11} />
+                  Reconnect
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-400 transition-colors ml-auto"
+                >
+                  {disconnecting ? <Loader2 size={11} className="animate-spin" /> : <Unlink size={11} />}
+                  Disconnect
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            /* ── Not connected / reconnect state ── */
+            <motion.div
+              key="connect"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="space-y-4"
+            >
+              {/* How to get key */}
+              <div className={cn('rounded-xl border p-3.5 space-y-2.5', c.accent)}>
+                <p className={cn('text-xs font-medium flex items-center gap-2', c.text)}>
+                  <Key size={11} />
+                  {instructions}
+                </p>
+                <ol className="space-y-1.5">
+                  {helpSteps.map((step, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
+                      <span className={cn('w-4 h-4 rounded-full text-[10px] flex items-center justify-center shrink-0 mt-0.5 font-semibold', c.bg, c.text)}>
+                        {i + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Key input */}
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    value={key}
+                    onChange={(e) => handleKeyChange(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData('text').trim()
+                      setKey(pasted)
+                      handleKeyChange(pasted)
+                    }}
+                    placeholder={keyPlaceholder}
+                    className={cn(
+                      'flex-1 min-w-0 bg-[#080D1A] border border-white/[0.08] rounded-lg px-3 py-2',
+                      'text-xs text-white font-mono placeholder:text-slate-600',
+                      'focus:outline-none transition-colors',
+                      c.ring,
+                      validationError && 'border-rose-500/40'
+                    )}
+                  />
+                  <button
+                    onClick={handleConnect}
+                    disabled={connecting || !key.trim()}
+                    className={cn(
+                      'flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white transition-all shrink-0',
+                      c.btn,
+                      (connecting || !key.trim()) && 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    {connecting
+                      ? <Loader2 size={12} className="animate-spin" />
+                      : <ArrowRight size={12} />}
+                    {connecting ? 'Connecting...' : 'Connect'}
+                  </button>
+                </div>
+
+                {validationError && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1.5">
+                    <AlertTriangle size={11} className="shrink-0" />
+                    {validationError}
+                  </p>
+                )}
+
+                {result && (
+                  <p className={cn('text-xs flex items-center gap-1.5', result.ok ? 'text-emerald-400' : 'text-rose-400')}>
+                    {result.ok
+                      ? <CheckCircle2 size={11} className="shrink-0" />
+                      : <AlertTriangle size={11} className="shrink-0" />}
+                    {result.message}
+                  </p>
+                )}
+              </div>
+
+              {reconnecting && (
+                <button
+                  onClick={() => { setReconnecting(false); setKey(''); setResult(null) }}
+                  className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  ← Keep current connection
+                </button>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
+  )
+}
+
+// ── Advanced Settings (tenant ID) ─────────────────────────────────────────────
+
+const TENANT_ID_PATTERN = /^[a-zA-Z0-9._-]{2,64}$/
+
+function AdvancedSettings({
+  tenantId, onTenantChange,
+}: { tenantId: string; onTenantChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(tenantId)
+
+  useEffect(() => setDraft(tenantId), [tenantId])
+
+  function apply() {
+    const normalized = draft.trim().toLowerCase()
+    const valid = normalized && TENANT_ID_PATTERN.test(normalized) ? normalized : 'default'
+    onTenantChange(valid)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('astra_tenant_id', valid)
+    }
+  }
+
+  return (
+    <div className="border border-white/[0.05] rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Shield size={12} />
+          Advanced Settings
+          <span className="font-mono text-slate-600">workspace: {tenantId}</span>
+        </span>
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-white/[0.05]"
+          >
+            <div className="p-4 space-y-3 bg-[#080D1A]">
+              <div>
+                <p className="text-[11px] text-slate-400 mb-1.5 font-medium">Workspace / Tenant ID</p>
+                <div className="flex gap-2">
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && apply()}
+                    placeholder="default"
+                    className="flex-1 bg-[#0F1629] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-white/20"
+                  />
+                  <button
+                    onClick={apply}
+                    className="px-3 py-2 rounded-lg text-xs font-medium bg-white/[0.07] hover:bg-white/[0.12] text-white border border-white/[0.08] transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1.5 leading-relaxed">
+                  For businesses with multiple locations. Use different workspace IDs per location to keep credentials separate. Most users can leave this as "default".
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 
@@ -754,7 +472,6 @@ function ServiceCard({
 
 export default function ConnectPage() {
   const [tenantId, setTenantId] = useState('default')
-  const [tenantDraft, setTenantDraft] = useState('default')
   const [status, setStatus] = useState<ServiceStatus | null>(null)
   const [creds, setCreds] = useState<Credentials>({
     atlas: { hasKey: false, lastUpdatedAt: null, url: null },
@@ -765,19 +482,17 @@ export default function ConnectPage() {
 
   useEffect(() => {
     const stored = typeof window !== 'undefined' ? window.localStorage.getItem('astra_tenant_id') : null
-    const initial = normalizeTenantId(stored || 'default')
-    setTenantId(initial)
-    setTenantDraft(initial)
+    setTenantId(stored || 'default')
   }, [])
 
-  const checkStatus = useCallback(async (tid = tenantId) => {
+  const refresh = useCallback(async (tid = tenantId) => {
     setLoading(true)
     try {
       const q = `?tenantId=${encodeURIComponent(tid)}`
-      const headers = { 'x-tenant-id': tid }
+      const h = { 'x-tenant-id': tid }
       const [statusRes, credsRes] = await Promise.all([
-        fetch(`/api/connect${q}`, { headers }),
-        fetch(`/api/connect/setup${q}`, { headers }),
+        fetch(`/api/connect${q}`, { headers: h }),
+        fetch(`/api/connect/setup${q}`, { headers: h }),
       ])
       const [statusData, credsData] = await Promise.all([statusRes.json(), credsRes.json()])
       setStatus(statusData)
@@ -790,131 +505,133 @@ export default function ConnectPage() {
     }
   }, [tenantId])
 
-  useEffect(() => { checkStatus(tenantId) }, [tenantId])
+  useEffect(() => { refresh(tenantId) }, [tenantId])
 
-  function applyTenant() {
-    const normalized = normalizeTenantId(tenantDraft)
-    setTenantId(normalized)
-    setTenantDraft(normalized)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('astra_tenant_id', normalized)
-    }
-  }
-
-  const bothConnected = !!(status?.atlas.reachable && status?.spark.reachable)
-  const anyConnected = !!(status?.atlas.reachable || status?.spark.reachable)
+  const bothLive = status?.atlas.reachable && status?.spark.reachable
+  const anyLive = status?.atlas.reachable || status?.spark.reachable
+  const bothConnected = creds.atlas.hasKey && creds.spark.hasKey
 
   return (
     <>
       <Topbar
-        title="Connect Platforms"
-        subtitle="Link Astra Atlas and Spark to see your live business data"
+        title="Connect"
+        subtitle="Link your Atlas and Spark accounts — one key each, done"
       />
 
-      <div className="p-6 max-w-5xl mx-auto w-full space-y-6">
+      <div className="p-6 max-w-3xl mx-auto w-full space-y-5">
 
-        {/* Status Banner */}
+        {/* Status banner */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className={cn(
             'rounded-xl border px-4 py-3 flex items-center justify-between gap-4',
-            bothConnected
+            bothLive
               ? 'bg-emerald-500/5 border-emerald-500/20'
-              : 'bg-amber-500/5 border-amber-500/20'
+              : bothConnected
+              ? 'bg-blue-500/5 border-blue-500/20'
+              : 'bg-white/[0.02] border-white/[0.06]'
           )}
         >
           <div className="flex items-center gap-3">
-            <div className={cn('w-2 h-2 rounded-full shrink-0', bothConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400')} />
-            <p className="text-sm text-slate-300">
+            {loading
+              ? <Loader2 size={13} className="animate-spin text-slate-400 shrink-0" />
+              : <div className={cn('w-2 h-2 rounded-full shrink-0', bothLive ? 'bg-emerald-400 animate-pulse' : anyLive ? 'bg-amber-400' : 'bg-slate-600')} />}
+            <p className="text-xs text-slate-300">
               {loading
                 ? 'Checking connections...'
+                : bothLive
+                ? 'Both services live — Lens is reading your real business data'
+                : anyLive
+                ? 'One service connected — connect the other for full insights'
                 : bothConnected
-                ? 'Both platforms connected — Lens is reading your live business data'
-                : anyConnected
-                ? 'Partial connection — some data is live, some is demo'
-                : 'Running on demo data — connect your Atlas and Spark accounts below'}
+                ? 'Keys saved — services appear offline right now'
+                : 'Connect Atlas and Spark to unlock live intelligence'}
             </p>
           </div>
           <button
-            onClick={() => checkStatus(tenantId)}
+            onClick={() => refresh(tenantId)}
             disabled={loading}
-            className="shrink-0 flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+            className="shrink-0 text-xs text-slate-500 hover:text-white flex items-center gap-1.5 transition-colors"
           >
-            <RefreshCw size={13} className={cn(loading && 'animate-spin')} />
+            <RefreshCw size={12} className={cn(loading && 'animate-spin')} />
             {lastChecked
-              ? `Checked ${lastChecked.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+              ? lastChecked.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
               : 'Refresh'}
           </button>
         </motion.div>
 
-        {/* Service Status Cards */}
+        {/* Service Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ServiceCard
+          <ConnectionCard
+            service="atlas"
             name="Astra Atlas"
             tagline="Billing · Inventory · Customers"
             icon={Building2}
             color="blue"
+            keyPrefix="atlens1_"
+            keyPlaceholder="atlens1_..."
+            instructions="How to get your Atlas connection key"
+            helpSteps={[
+              'Open Astra Atlas on your desktop',
+              'Go to Settings → Integrations',
+              'Click "Astra Lens" → Generate Connection Key',
+              'Copy the key and paste it here',
+            ]}
+            creds={creds.atlas}
             status={status?.atlas ?? null}
-            actions={atlasActions}
-            delay={0.1}
-            isDesktopApp
+            tenantId={tenantId}
+            onRefresh={() => refresh(tenantId)}
           />
-          <ServiceCard
+
+          <ConnectionCard
+            service="spark"
             name="Astra Spark"
             tagline="WhatsApp · Campaigns · Reels"
             icon={Zap}
             color="orange"
+            keyPrefix="splens1_"
+            keyPlaceholder="splens1_..."
+            instructions="How to get your Spark connection key"
+            helpSteps={[
+              'Open Astra Spark in your browser',
+              'Go to Settings → Integrations → Astra Lens',
+              'Click "Generate Connection Key"',
+              'Copy the key and paste it here',
+            ]}
+            creds={creds.spark}
             status={status?.spark ?? null}
-            actions={sparkActions}
-            baseUrl={SPARK_WEB_URL}
-            delay={0.15}
+            tenantId={tenantId}
+            onRefresh={() => refresh(tenantId)}
           />
         </div>
 
-        {/* Tenant ID */}
+        {/* Security note */}
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="bg-[#0F1629] rounded-2xl border border-white/[0.06] p-5 space-y-3"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.02] border border-white/[0.04]"
         >
-          <div className="flex items-center gap-2">
-            <Key size={13} className="text-slate-400" />
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Workspace / Tenant ID</p>
-          </div>
-          <div className="flex gap-2">
-            <input
-              value={tenantDraft}
-              onChange={(e) => setTenantDraft(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applyTenant()}
-              placeholder="default"
-              className="flex-1 bg-[#080D1A] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-white/20"
-            />
-            <button
-              onClick={applyTenant}
-              className="px-4 py-2 rounded-lg text-xs font-medium bg-white/[0.07] hover:bg-white/[0.11] text-white transition-colors border border-white/[0.08]"
-            >
-              Apply
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Active tenant: <span className="font-mono text-slate-300">{tenantId}</span>.
-            API keys are isolated per tenant — each tenant has its own Atlas and Spark connection.
+          <Shield size={13} className="text-slate-500 shrink-0" />
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Connection keys are encrypted with AES-256-GCM and stored securely on the server. Keys are never exposed in the UI after saving.
           </p>
         </motion.div>
 
-        {/* Atlas Setup */}
-        <AtlasSetup tenantId={tenantId} creds={creds} onSaved={() => checkStatus(tenantId)} />
-
-        {/* Spark Setup */}
-        <SparkSetup tenantId={tenantId} creds={creds} onSaved={() => checkStatus(tenantId)} />
-
-        {/* Footer note */}
-        <p className="text-[11px] text-slate-600 text-center leading-relaxed pb-2">
-          API keys are encrypted with AES-256-GCM and stored per tenant on the server.
-          Env var defaults apply when no saved key is present.
-        </p>
+        {/* Advanced Settings */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+        >
+          <AdvancedSettings
+            tenantId={tenantId}
+            onTenantChange={(id) => {
+              setTenantId(id)
+            }}
+          />
+        </motion.div>
       </div>
     </>
   )

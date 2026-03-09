@@ -7,7 +7,8 @@ import { getTenantApiKey, getTenantUrl } from '../lib/tenant-credentials-store'
 /**
  * AtlasService — reads operations data from Astra Atlas.
  *
- * Auth: Authorization: Bearer <key>
+ * Auth: x-api-key: <key>  (Atlas integrationAuthMiddleware)
+ * Endpoint: GET /api/lens/snapshot
  *
  * If tenant has no key/url configured → demo (mock) data.
  * If API call fails → fallback to mock data.
@@ -25,8 +26,8 @@ export class AtlasService {
     if (!url || !key) return false
 
     try {
-      await axios.get(`${url}/api/health`, {
-        headers: { Authorization: `Bearer ${key}` },
+      await axios.get(`${url}/api/lens/health`, {
+        headers: { 'x-api-key': key },
         timeout: 3000,
       })
       return true
@@ -52,42 +53,40 @@ export class AtlasService {
     }
 
     try {
-      const headers = { Authorization: `Bearer ${key}` }
-
-      const [salesRes, inventoryRes, customersRes] = await Promise.all([
-        axios.get(`${url}/api/reports/sales-summary`, { headers, timeout: 8000 }),
-        axios.get(`${url}/api/inventory?limit=100`, { headers, timeout: 8000 }),
-        axios.get(`${url}/api/customers/summary`, { headers, timeout: 8000 }),
-      ])
+      const res = await axios.get(`${url}/api/lens/snapshot`, {
+        headers: { 'x-api-key': key },
+        timeout: 8000,
+      })
 
       logger.success(`AtlasService → live data for tenant:${tenantId}`)
 
+      const data = res.data
       return {
-        business: salesRes.data.business,
+        business: data.business,
         sales: {
-          today: salesRes.data.today,
-          yesterday: salesRes.data.yesterday,
-          thisWeek: salesRes.data.thisWeek,
-          lastWeek: salesRes.data.lastWeek,
-          thisMonth: salesRes.data.thisMonth,
-          lastMonth: salesRes.data.lastMonth,
-          todayTransactions: salesRes.data.todayTransactions || 0,
-          trend: salesRes.data.trend || [],
+          today: data.sales?.today ?? 0,
+          yesterday: data.sales?.yesterday ?? 0,
+          thisWeek: data.sales?.thisWeek ?? 0,
+          lastWeek: data.sales?.lastWeek ?? 0,
+          thisMonth: data.sales?.thisMonth ?? 0,
+          lastMonth: data.sales?.lastMonth ?? 0,
+          todayTransactions: data.sales?.todayTransactions ?? 0,
+          trend: data.sales?.trend ?? [],
         },
         inventory: {
-          totalItems: inventoryRes.data.total,
-          totalValue: inventoryRes.data.totalValue || 0,
-          lowStockItems: inventoryRes.data.lowStock || [],
-          topProducts: inventoryRes.data.topSellers || [],
-          slowMoving: inventoryRes.data.slowMoving || [],
+          totalItems: data.inventory?.totalItems ?? 0,
+          totalValue: data.inventory?.totalValue ?? 0,
+          lowStockItems: data.inventory?.lowStockItems ?? [],
+          topProducts: data.inventory?.topProducts ?? [],
+          slowMoving: data.inventory?.slowMoving ?? [],
         },
         customers: {
-          total: customersRes.data.total,
-          active: customersRes.data.active,
-          inactive: customersRes.data.inactive,
-          newThisMonth: customersRes.data.newThisMonth || 0,
-          topCustomers: customersRes.data.topCustomers || [],
-          recentActivity: customersRes.data.recentActivity || [],
+          total: data.customers?.total ?? 0,
+          active: data.customers?.active ?? 0,
+          inactive: data.customers?.inactive ?? 0,
+          newThisMonth: data.customers?.newThisMonth ?? 0,
+          topCustomers: data.customers?.topCustomers ?? [],
+          recentActivity: data.customers?.recentActivity ?? [],
         },
       }
     } catch (err: any) {
