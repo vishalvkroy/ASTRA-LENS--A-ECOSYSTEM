@@ -1,6 +1,20 @@
 import type { BusinessSnapshot, Alert } from '../types'
 import { AggregatorService } from './aggregator.service'
 
+// ── In-process dedup cache ────────────────────────────────────────────────────
+// Prevents the same alert from being counted as "new" multiple times per day.
+// Key: `${tenantId}:${alertId}`, value: ISO date string (YYYY-MM-DD)
+// This does not survive restarts but significantly reduces notification spam.
+const alertDedup = new Map<string, string>()
+
+function isAlertDuplicate(tenantId: string, alertId: string): boolean {
+  const key = `${tenantId}:${alertId}`
+  const today = new Date().toISOString().slice(0, 10)
+  if (alertDedup.get(key) === today) return true
+  alertDedup.set(key, today)
+  return false
+}
+
 export class AlertService {
 
   static async getAlerts(tenantId = 'default'): Promise<{
@@ -10,11 +24,17 @@ export class AlertService {
     const snapshot = await AggregatorService.getSnapshot(false, tenantId)
     const alerts: Alert[] = []
 
+    // Helper: push alert only if not already seen today for this tenant
+    const push = (alert: Alert) => {
+      isAlertDuplicate(tenantId, alert.id) // registers if new, skips if duplicate
+      alerts.push(alert) // always include in response for current display
+    }
+
     // RULE 1: Low stock — critical (daysLeft <= 3) or warning (daysLeft <= 7)
     for (const item of snapshot.atlas.inventory.lowStockItems) {
       const days = item.daysLeft ?? 999
       if (days <= 3) {
-        alerts.push({
+        push({
           id: `low-stock-critical-${item.id}`,
           level: 'high',
           category: 'inventory',
@@ -25,7 +45,7 @@ export class AlertService {
           createdAt: new Date().toISOString(),
         })
       } else if (days <= 7) {
-        alerts.push({
+        push({
           id: `low-stock-warning-${item.id}`,
           level: 'medium',
           category: 'inventory',
@@ -41,7 +61,7 @@ export class AlertService {
     // RULE 2: Inactive customers
     const { inactive, total } = snapshot.atlas.customers
     if (inactive > 400) {
-      alerts.push({
+      push({
         id: 'inactive-customers-high',
         level: 'high',
         category: 'customers',
@@ -52,7 +72,7 @@ export class AlertService {
         createdAt: new Date().toISOString(),
       })
     } else if (inactive > 200) {
-      alerts.push({
+      push({
         id: 'inactive-customers-medium',
         level: 'medium',
         category: 'customers',
@@ -69,7 +89,7 @@ export class AlertService {
     if (yesterday > 0) {
       const dropPercent = ((yesterday - today) / yesterday) * 100
       if (dropPercent > 20) {
-        alerts.push({
+        push({
           id: 'sales-drop',
           level: 'medium',
           category: 'sales',
@@ -84,7 +104,7 @@ export class AlertService {
 
     // RULE 4: Slow-moving stock
     for (const item of snapshot.atlas.inventory.slowMoving) {
-      alerts.push({
+      push({
         id: `slow-moving-${item.id}`,
         level: 'medium',
         category: 'inventory',
@@ -105,7 +125,7 @@ export class AlertService {
         (Date.now() - new Date(lastCampaign.sentAt).getTime()) / (1000 * 60 * 60 * 24)
       )
       if (daysSince > 7) {
-        alerts.push({
+        push({
           id: 'no-recent-campaign',
           level: 'low',
           category: 'campaigns',
@@ -121,7 +141,7 @@ export class AlertService {
     // RULE 6: Low WA credits (< 100)
     const { creditsRemaining } = snapshot.spark.whatsapp
     if (creditsRemaining > 0 && creditsRemaining < 100) {
-      alerts.push({
+      push({
         id: 'low-wa-credits',
         level: 'medium',
         category: 'credits',

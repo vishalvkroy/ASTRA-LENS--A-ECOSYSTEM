@@ -122,6 +122,8 @@ function ConnectionCard({
   const [reconnecting, setReconnecting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [validationError, setValidationError] = useState('')
+  const [diagnosing, setDiagnosing] = useState(false)
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null)
 
   const c = color === 'blue'
     ? { border: 'border-blue-500/20', icon: 'from-blue-500 to-blue-600', text: 'text-blue-400', bg: 'bg-blue-500/10', ring: 'focus:border-blue-500/40', btn: 'bg-blue-500 hover:bg-blue-600', accent: 'border-blue-500/30 bg-blue-500/5' }
@@ -188,6 +190,29 @@ function ConnectionCard({
       setResult({ ok: false, message: 'Could not reach Lens server. Is it running?' })
     } finally {
       setConnecting(false)
+    }
+  }
+
+  async function handleDiagnose() {
+    setDiagnosing(true)
+    setDiagnoseError(null)
+    try {
+      const res = await fetch('/api/connect/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ service }),
+      })
+      const data = await res.json()
+      if (data.reachable) {
+        setDiagnoseError(null)
+        onRefresh()
+      } else {
+        setDiagnoseError(data.errorMessage || 'Unknown error — check server logs')
+      }
+    } catch {
+      setDiagnoseError('Could not reach Lens backend')
+    } finally {
+      setDiagnosing(false)
     }
   }
 
@@ -265,7 +290,9 @@ function ConnectionCard({
                   <p className="text-xs text-slate-400 mt-0.5">
                     {isReachable
                       ? 'Reading live data from your account'
-                      : 'Server may be offline — Lens is using demo data until it reconnects'}
+                      : diagnoseError
+                      ? diagnoseError
+                      : 'Server may be offline — tap "Why?" to diagnose'}
                   </p>
                   {creds.lastUpdatedAt && (
                     <p className="text-[11px] text-slate-500 mt-1.5">
@@ -280,14 +307,24 @@ function ConnectionCard({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
-                  onClick={() => { setReconnecting(true); setResult(null) }}
+                  onClick={() => { setReconnecting(true); setResult(null); setDiagnoseError(null) }}
                   className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-2 rounded-lg transition-all"
                 >
                   <RefreshCw size={11} />
                   Reconnect
                 </button>
+                {!isReachable && (
+                  <button
+                    onClick={handleDiagnose}
+                    disabled={diagnosing}
+                    className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 px-3 py-2 rounded-lg transition-all"
+                  >
+                    {diagnosing ? <Loader2 size={11} className="animate-spin" /> : <AlertTriangle size={11} />}
+                    {diagnosing ? 'Testing...' : 'Why offline?'}
+                  </button>
+                )}
                 <button
                   onClick={handleDisconnect}
                   disabled={disconnecting}

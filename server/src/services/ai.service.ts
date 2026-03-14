@@ -1,21 +1,23 @@
-import { anthropic, AI_MODEL } from '../lib/anthropic'
+import { getGroqClient, AI_MODEL } from '../lib/anthropic'
 import { buildInsightsPrompt } from '../lib/prompts'
 import type { BusinessSnapshot, InsightCard } from '../types'
 import { cache } from '../lib/cache'
 import { logger } from '../lib/logger'
 
 const INSIGHTS_CACHE_TTL = parseInt(process.env.INSIGHTS_CACHE_TTL || '600', 10)
-const CACHE_KEY = 'ai_insights'
 
 export class AIService {
 
   static async generateInsights(
+    tenantId: string,
     snapshot: BusinessSnapshot,
     forceRefresh = false
   ): Promise<InsightCard[]> {
 
+    const cacheKey = `ai_insights:${tenantId}`
+
     if (!forceRefresh) {
-      const cached = cache.get<InsightCard[]>(CACHE_KEY)
+      const cached = cache.get<InsightCard[]>(cacheKey)
       if (cached) {
         logger.info('AIService → returning cached insights')
         return cached
@@ -25,7 +27,7 @@ export class AIService {
     logger.info('AIService → calling Groq...')
     const prompt = buildInsightsPrompt(snapshot)
 
-    const response = await (anthropic as any).chat.completions.create({
+    const response = await getGroqClient().chat.completions.create({
       model: AI_MODEL,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
@@ -46,7 +48,7 @@ export class AIService {
       generatedAt: new Date().toISOString(),
     }))
 
-    cache.set(CACHE_KEY, insights, INSIGHTS_CACHE_TTL)
+    cache.set(cacheKey, insights, INSIGHTS_CACHE_TTL)
     logger.success(`AIService → ${insights.length} insights generated + cached ${INSIGHTS_CACHE_TTL}s`)
 
     return insights

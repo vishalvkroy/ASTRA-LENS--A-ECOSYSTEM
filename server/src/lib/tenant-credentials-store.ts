@@ -1,7 +1,15 @@
+/**
+ * Tenant credential store — PostgreSQL backed.
+ * Replaces the previous file-based store (data/tenant-credentials.json).
+ *
+ * Schema: see migrations/017_lens_tenant_credentials.sql
+ *
+ * Falls back to in-memory cache when DB is unavailable (dev with no DB configured).
+ */
 import crypto from 'crypto'
-import fs from 'fs'
-import path from 'path'
 import { DEFAULT_TENANT_ID, normalizeTenantId } from './tenant'
+import { getPool } from './db'
+import { logger } from './logger'
 
 type ServiceName = 'atlas' | 'spark'
 
@@ -9,29 +17,6 @@ interface EncryptedValue {
   iv: string
   tag: string
   value: string
-}
-
-interface TenantCredentialRecord {
-  // Encrypted API keys
-  atlas?: EncryptedValue
-  spark?: EncryptedValue
-  atlasUpdatedAt?: string
-  sparkUpdatedAt?: string
-
-  // Plain-text service URLs (not sensitive)
-  atlasUrl?: string
-  sparkUrl?: string
-  atlasUrlUpdatedAt?: string
-  sparkUrlUpdatedAt?: string
-
-  // Spark businessId — identifies which Spark tenant Lens reads data for
-  sparkBusinessId?: string
-  sparkBusinessIdUpdatedAt?: string
-}
-
-interface StoreData {
-  version: 1
-  tenants: Record<string, TenantCredentialRecord>
 }
 
 export interface CredentialStatus {
@@ -46,10 +31,6 @@ export interface SparkCredentialStatus extends CredentialStatus {
 
 // ── Encryption setup ──────────────────────────────────────────────────────────
 
-const STORE_FILE_PATH = process.env.CREDENTIALS_STORE_FILE
-  ? path.resolve(process.env.CREDENTIALS_STORE_FILE)
-  : path.resolve(process.cwd(), 'data', 'tenant-credentials.json')
-
 const ENCRYPTION_SECRET = process.env.CREDENTIALS_ENCRYPTION_KEY
 if (!ENCRYPTION_SECRET || ENCRYPTION_SECRET === 'astra-lens-change-this-secret-in-production-32chars') {
   console.warn(
@@ -63,52 +44,24 @@ const ENCRYPTION_KEY = crypto
   .update(ENCRYPTION_SECRET || 'astra-lens-local-dev-secret-change-me')
   .digest()
 
-// ── Store persistence ─────────────────────────────────────────────────────────
-
-let store: StoreData | null = null
-
-function defaultStore(): StoreData {
-  return { version: 1, tenants: {} }
-}
-
-function ensureStoreLoaded(): StoreData {
-  if (store) return store
-  try {
-    const file = fs.readFileSync(STORE_FILE_PATH, 'utf8')
-    const parsed = JSON.parse(file) as StoreData
-    if (parsed.version !== 1 || typeof parsed.tenants !== 'object') {
-      store = defaultStore()
-    } else {
-      store = parsed
-    }
-  } catch {
-    store = defaultStore()
-  }
-  return store
-}
-
-function persistStore() {
-  const data = ensureStoreLoaded()
-  fs.mkdirSync(path.dirname(STORE_FILE_PATH), { recursive: true })
-  fs.writeFileSync(STORE_FILE_PATH, JSON.stringify(data, null, 2), 'utf8')
-}
-
 // ── Encryption helpers ────────────────────────────────────────────────────────
 
-function encryptValue(value: string): EncryptedValue {
+function encryptValue(value: string): string {
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv)
   const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
-  return {
+  const payload: EncryptedValue = {
     iv: iv.toString('base64'),
     tag: tag.toString('base64'),
     value: encrypted.toString('base64'),
   }
+  return JSON.stringify(payload)
 }
 
-function decryptValue(payload: EncryptedValue): string | null {
+function decryptValue(raw: string): string | null {
   try {
+    const payload = JSON.parse(raw) as EncryptedValue
     const decipher = crypto.createDecipheriv(
       'aes-256-gcm',
       ENCRYPTION_KEY,
@@ -125,30 +78,87 @@ function decryptValue(payload: EncryptedValue): string | null {
   }
 }
 
-// ── Tenant record helpers ─────────────────────────────────────────────────────
+// ── In-memory fallback (dev / no-DB environments) ────────────────────────────
 
-function getTenantRecord(tenantId: string): TenantCredentialRecord {
-  const data = ensureStoreLoaded()
-  const resolved = normalizeTenantId(tenantId)
-  if (!data.tenants[resolved]) {
-    data.tenants[resolved] = {}
+interface InMemRecord {
+  atlasKeyEnc?: string
+  sparkKeyEnc?: string
+  atlasUrl?: string
+  sparkUrl?: string
+  sparkBizId?: string
+  atlasUpdatedAt?: string
+  sparkUpdatedAt?: string
+}
+
+const memStore = new Map<string, InMemRecord>()
+
+function getMemRecord(tenantId: string): InMemRecord {
+  if (!memStore.has(tenantId)) memStore.set(tenantId, {})
+  return memStore.get(tenantId)!
+}
+
+// ── DB row type ───────────────────────────────────────────────────────────────
+
+interface DBRow {
+  atlas_key_enc: string | null
+  spark_key_enc: string | null
+  atlas_url: string | null
+  spark_url: string | null
+  spark_biz_id: string | null
+  updated_at: string | null
+}
+
+async function dbGetRow(tenantId: string): Promise<DBRow | null> {
+  const pool = getPool()
+  if (!pool) return null
+  try {
+    const result = await pool.query<DBRow>(
+      `SELECT atlas_key_enc, spark_key_enc, atlas_url, spark_url, spark_biz_id, updated_at
+         FROM lens_tenant_credentials
+        WHERE tenant_id = $1`,
+      [tenantId]
+    )
+    return result.rows[0] ?? null
+  } catch (err: any) {
+    logger.warn('[credentials-store] DB read failed:', err.message)
+    return null
   }
-  return data.tenants[resolved]
 }
 
-function pruneEmptyTenant(tenantId: string) {
-  const data = ensureStoreLoaded()
-  const resolved = normalizeTenantId(tenantId)
-  const record = data.tenants[resolved]
-  if (!record) return
-  const hasAny =
-    !!record.atlas ||
-    !!record.spark ||
-    !!record.atlasUrl ||
-    !!record.sparkUrl ||
-    !!record.sparkBusinessId
-  if (!hasAny) delete data.tenants[resolved]
+async function dbUpsert(
+  tenantId: string,
+  fields: Partial<{
+    atlas_key_enc: string | null
+    spark_key_enc: string | null
+    atlas_url: string | null
+    spark_url: string | null
+    spark_biz_id: string | null
+  }>
+): Promise<void> {
+  const pool = getPool()
+  if (!pool) return
+  try {
+    const setClauses: string[] = ['updated_at = NOW()']
+    const params: any[] = [tenantId]
+    let idx = 2
+    for (const [col, val] of Object.entries(fields)) {
+      setClauses.push(`${col} = $${idx}`)
+      params.push(val)
+      idx++
+    }
+    await pool.query(
+      `INSERT INTO lens_tenant_credentials (tenant_id, ${Object.keys(fields).join(', ')})
+         VALUES ($1, ${Object.keys(fields).map((_, i) => `$${i + 2}`).join(', ')})
+         ON CONFLICT (tenant_id)
+         DO UPDATE SET ${setClauses.join(', ')}`,
+      params
+    )
+  } catch (err: any) {
+    logger.warn('[credentials-store] DB upsert failed:', err.message)
+  }
 }
+
+// ── Environment fallbacks ─────────────────────────────────────────────────────
 
 function envFallback(service: ServiceName): string | undefined {
   if (service === 'atlas') return process.env.ATLAS_API_KEY || undefined
@@ -162,147 +172,145 @@ function envUrlFallback(service: ServiceName): string | undefined {
 
 // ── Public API — API Keys ─────────────────────────────────────────────────────
 
-export function getTenantApiKey(tenantId: string, service: ServiceName): string | undefined {
+export async function getTenantApiKey(
+  tenantId: string,
+  service: ServiceName
+): Promise<string | undefined> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
-  const encrypted = service === 'atlas' ? record.atlas : record.spark
 
-  if (encrypted) {
-    const decrypted = decryptValue(encrypted)
-    if (decrypted) return decrypted
+  const row = await dbGetRow(resolved)
+  if (row) {
+    const enc = service === 'atlas' ? row.atlas_key_enc : row.spark_key_enc
+    if (enc) {
+      const decrypted = decryptValue(enc)
+      if (decrypted) return decrypted
+    }
+  } else {
+    // Fallback to in-memory
+    const rec = getMemRecord(resolved)
+    const enc = service === 'atlas' ? rec.atlasKeyEnc : rec.sparkKeyEnc
+    if (enc) {
+      const decrypted = decryptValue(enc)
+      if (decrypted) return decrypted
+    }
   }
 
   if (resolved === DEFAULT_TENANT_ID) return envFallback(service)
   return undefined
 }
 
-export function setTenantApiKey(
+export async function setTenantApiKey(
   tenantId: string,
   service: ServiceName,
   apiKey: string | null
-): void {
+): Promise<void> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
-  const trimmed = apiKey?.trim()
-  const now = new Date().toISOString()
+  const trimmed = apiKey?.trim() || null
+  const enc = trimmed ? encryptValue(trimmed) : null
 
-  if (trimmed) {
-    if (service === 'atlas') {
-      record.atlas = encryptValue(trimmed)
-      record.atlasUpdatedAt = now
-    } else {
-      record.spark = encryptValue(trimmed)
-      record.sparkUpdatedAt = now
-    }
+  const field = service === 'atlas' ? 'atlas_key_enc' : 'spark_key_enc'
+  await dbUpsert(resolved, { [field]: enc })
+
+  // Also update in-memory fallback
+  const rec = getMemRecord(resolved)
+  if (service === 'atlas') {
+    rec.atlasKeyEnc = enc ?? undefined
+    rec.atlasUpdatedAt = new Date().toISOString()
   } else {
-    if (service === 'atlas') {
-      delete record.atlas
-      delete record.atlasUpdatedAt
-    } else {
-      delete record.spark
-      delete record.sparkUpdatedAt
-    }
+    rec.sparkKeyEnc = enc ?? undefined
+    rec.sparkUpdatedAt = new Date().toISOString()
   }
-
-  pruneEmptyTenant(resolved)
-  persistStore()
 }
 
 // ── Public API — Service URLs ─────────────────────────────────────────────────
 
-export function getTenantUrl(tenantId: string, service: ServiceName): string | undefined {
+export async function getTenantUrl(
+  tenantId: string,
+  service: ServiceName
+): Promise<string | undefined> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
-  const stored = service === 'atlas' ? record.atlasUrl : record.sparkUrl
-  if (stored) return stored
+
+  const row = await dbGetRow(resolved)
+  if (row) {
+    const stored = service === 'atlas' ? row.atlas_url : row.spark_url
+    if (stored) return stored
+  } else {
+    const rec = getMemRecord(resolved)
+    const stored = service === 'atlas' ? rec.atlasUrl : rec.sparkUrl
+    if (stored) return stored
+  }
+
   return envUrlFallback(service)
 }
 
-export function setTenantUrl(
+export async function setTenantUrl(
   tenantId: string,
   service: ServiceName,
   url: string | null
-): void {
+): Promise<void> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
   const trimmed = url?.trim() || null
-  const now = new Date().toISOString()
 
-  if (trimmed) {
-    if (service === 'atlas') {
-      record.atlasUrl = trimmed
-      record.atlasUrlUpdatedAt = now
-    } else {
-      record.sparkUrl = trimmed
-      record.sparkUrlUpdatedAt = now
-    }
-  } else {
-    if (service === 'atlas') {
-      delete record.atlasUrl
-      delete record.atlasUrlUpdatedAt
-    } else {
-      delete record.sparkUrl
-      delete record.sparkUrlUpdatedAt
-    }
-  }
+  const field = service === 'atlas' ? 'atlas_url' : 'spark_url'
+  await dbUpsert(resolved, { [field]: trimmed })
 
-  pruneEmptyTenant(resolved)
-  persistStore()
+  const rec = getMemRecord(resolved)
+  if (service === 'atlas') rec.atlasUrl = trimmed ?? undefined
+  else rec.sparkUrl = trimmed ?? undefined
 }
 
 // ── Public API — Spark Business ID ───────────────────────────────────────────
 
-export function getSparkBusinessId(tenantId: string): string | undefined {
+export async function getSparkBusinessId(tenantId: string): Promise<string | undefined> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
-  if (record.sparkBusinessId) return record.sparkBusinessId
+
+  const row = await dbGetRow(resolved)
+  if (row?.spark_biz_id) return row.spark_biz_id
+
+  const rec = getMemRecord(resolved)
+  if (rec.sparkBizId) return rec.sparkBizId
+
   return process.env.SPARK_BUSINESS_ID || undefined
 }
 
-export function setSparkBusinessId(tenantId: string, businessId: string | null): void {
+export async function setSparkBusinessId(
+  tenantId: string,
+  businessId: string | null
+): Promise<void> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
   const trimmed = businessId?.trim() || null
-  const now = new Date().toISOString()
 
-  if (trimmed) {
-    record.sparkBusinessId = trimmed
-    record.sparkBusinessIdUpdatedAt = now
-  } else {
-    delete record.sparkBusinessId
-    delete record.sparkBusinessIdUpdatedAt
-  }
+  await dbUpsert(resolved, { spark_biz_id: trimmed })
 
-  pruneEmptyTenant(resolved)
-  persistStore()
+  const rec = getMemRecord(resolved)
+  rec.sparkBizId = trimmed ?? undefined
 }
 
 // ── Public API — Status ───────────────────────────────────────────────────────
 
-export function getCredentialStatus(tenantId: string, service: ServiceName): CredentialStatus {
+export async function getCredentialStatus(
+  tenantId: string,
+  service: ServiceName
+): Promise<CredentialStatus> {
   const resolved = normalizeTenantId(tenantId)
-  const record = getTenantRecord(resolved)
-  const url = getTenantUrl(resolved, service) || null
+  const url = (await getTenantUrl(resolved, service)) || null
 
-  if (service === 'atlas') {
-    if (record.atlas) return { hasKey: true, lastUpdatedAt: record.atlasUpdatedAt || null, url }
-    if (resolved === DEFAULT_TENANT_ID && !!envFallback('atlas')) {
-      return { hasKey: true, lastUpdatedAt: null, url }
-    }
-    return { hasKey: false, lastUpdatedAt: null, url }
-  }
+  const row = await dbGetRow(resolved)
+  const enc = row
+    ? (service === 'atlas' ? row.atlas_key_enc : row.spark_key_enc)
+    : (service === 'atlas' ? getMemRecord(resolved).atlasKeyEnc : getMemRecord(resolved).sparkKeyEnc)
 
-  if (record.spark) return { hasKey: true, lastUpdatedAt: record.sparkUpdatedAt || null, url }
-  if (resolved === DEFAULT_TENANT_ID && !!envFallback('spark')) {
+  if (enc) return { hasKey: true, lastUpdatedAt: row?.updated_at ?? null, url }
+  if (resolved === DEFAULT_TENANT_ID && !!envFallback(service)) {
     return { hasKey: true, lastUpdatedAt: null, url }
   }
   return { hasKey: false, lastUpdatedAt: null, url }
 }
 
-export function getSparkCredentialStatus(tenantId: string): SparkCredentialStatus {
-  const base = getCredentialStatus(tenantId, 'spark')
+export async function getSparkCredentialStatus(tenantId: string): Promise<SparkCredentialStatus> {
+  const base = await getCredentialStatus(tenantId, 'spark')
   return {
     ...base,
-    businessId: getSparkBusinessId(tenantId) || null,
+    businessId: (await getSparkBusinessId(tenantId)) || null,
   }
 }

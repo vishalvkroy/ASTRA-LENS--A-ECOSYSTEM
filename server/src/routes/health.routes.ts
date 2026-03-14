@@ -48,11 +48,11 @@ function decodeSparkKey(key: string): SparkKeyParts | null {
 
 // ── Credential payload helper ─────────────────────────────────────────────────
 
-function buildCredentialPayload(tenantId: string) {
+async function buildCredentialPayload(tenantId: string) {
   return {
     tenantId,
-    atlas: getCredentialStatus(tenantId, 'atlas'),
-    spark: getSparkCredentialStatus(tenantId),
+    atlas: await getCredentialStatus(tenantId, 'atlas'),
+    spark: await getSparkCredentialStatus(tenantId),
   }
 }
 
@@ -61,13 +61,12 @@ router.get('/services', async (req: Request, res: Response) => {
   const devMode = process.env.DEV_MODE === 'true'
   const tenantId = getTenantIdFromRequest(req)
 
-  const [atlasReachable, sparkReachable] = await Promise.all([
+  const [atlasReachable, sparkReachable, atlasCreds, sparkCreds] = await Promise.all([
     devMode ? Promise.resolve(false) : AtlasService.isReachable(tenantId),
     devMode ? Promise.resolve(false) : SparkService.isReachable(tenantId),
+    getCredentialStatus(tenantId, 'atlas'),
+    getSparkCredentialStatus(tenantId),
   ])
-
-  const atlasCreds = getCredentialStatus(tenantId, 'atlas')
-  const sparkCreds = getSparkCredentialStatus(tenantId)
 
   logger.info(
     `GET /api/health/services → tenant:${tenantId} ` +
@@ -94,21 +93,21 @@ router.get('/services', async (req: Request, res: Response) => {
 
 // ── POST /api/health/setup ────────────────────────────────────────────────────
 // Legacy endpoint — save API keys, URLs, and Spark businessId per tenant
-router.post('/setup', (req: Request, res: Response) => {
+router.post('/setup', async (req: Request, res: Response) => {
   const tenantId = getTenantIdFromRequest(req)
   const { atlasApiKey, sparkApiKey, atlasUrl, sparkUrl, sparkBusinessId } = req.body as {
     atlasApiKey?: string; sparkApiKey?: string
     atlasUrl?: string; sparkUrl?: string; sparkBusinessId?: string
   }
 
-  if (atlasApiKey !== undefined) setTenantApiKey(tenantId, 'atlas', atlasApiKey || null)
-  if (sparkApiKey !== undefined) setTenantApiKey(tenantId, 'spark', sparkApiKey || null)
-  if (atlasUrl !== undefined) setTenantUrl(tenantId, 'atlas', atlasUrl || null)
-  if (sparkUrl !== undefined) setTenantUrl(tenantId, 'spark', sparkUrl || null)
-  if (sparkBusinessId !== undefined) setSparkBusinessId(tenantId, sparkBusinessId || null)
+  if (atlasApiKey !== undefined) await setTenantApiKey(tenantId, 'atlas', atlasApiKey || null)
+  if (sparkApiKey !== undefined) await setTenantApiKey(tenantId, 'spark', sparkApiKey || null)
+  if (atlasUrl !== undefined) await setTenantUrl(tenantId, 'atlas', atlasUrl || null)
+  if (sparkUrl !== undefined) await setTenantUrl(tenantId, 'spark', sparkUrl || null)
+  if (sparkBusinessId !== undefined) await setSparkBusinessId(tenantId, sparkBusinessId || null)
 
   logger.info(`POST /api/health/setup → tenant:${tenantId}`)
-  res.json({ success: true, ...buildCredentialPayload(tenantId) })
+  res.json({ success: true, ...(await buildCredentialPayload(tenantId)) })
 })
 
 // ── POST /api/health/connect-key ──────────────────────────────────────────────
@@ -129,8 +128,8 @@ router.post('/connect-key', async (req: Request, res: Response) => {
   // ── Atlas key ──
   const atlasDecoded = decodeAtlasKey(trimmed)
   if (atlasDecoded) {
-    setTenantUrl(tenantId, 'atlas', atlasDecoded.url)
-    setTenantApiKey(tenantId, 'atlas', atlasDecoded.apiKey)
+    await setTenantUrl(tenantId, 'atlas', atlasDecoded.url)
+    await setTenantApiKey(tenantId, 'atlas', atlasDecoded.apiKey)
     logger.info(`connect-key → tenant:${tenantId} atlas decoded (url:${atlasDecoded.url})`)
 
     const reachable = await AtlasService.isReachable(tenantId)
@@ -140,7 +139,7 @@ router.post('/connect-key', async (req: Request, res: Response) => {
       success: true,
       service: 'atlas',
       reachable,
-      ...buildCredentialPayload(tenantId),
+      ...(await buildCredentialPayload(tenantId)),
     })
     return
   }
@@ -148,9 +147,9 @@ router.post('/connect-key', async (req: Request, res: Response) => {
   // ── Spark key ──
   const sparkDecoded = decodeSparkKey(trimmed)
   if (sparkDecoded) {
-    setTenantUrl(tenantId, 'spark', sparkDecoded.url)
-    setSparkBusinessId(tenantId, sparkDecoded.businessId)
-    setTenantApiKey(tenantId, 'spark', sparkDecoded.apiKey)
+    await setTenantUrl(tenantId, 'spark', sparkDecoded.url)
+    await setSparkBusinessId(tenantId, sparkDecoded.businessId)
+    await setTenantApiKey(tenantId, 'spark', sparkDecoded.apiKey)
     logger.info(`connect-key → tenant:${tenantId} spark decoded (url:${sparkDecoded.url} bid:${sparkDecoded.businessId})`)
 
     const reachable = await SparkService.isReachable(tenantId)
@@ -160,7 +159,7 @@ router.post('/connect-key', async (req: Request, res: Response) => {
       success: true,
       service: 'spark',
       reachable,
-      ...buildCredentialPayload(tenantId),
+      ...(await buildCredentialPayload(tenantId)),
     })
     return
   }
@@ -173,9 +172,9 @@ router.post('/connect-key', async (req: Request, res: Response) => {
 })
 
 // ── GET /api/health/credentials ───────────────────────────────────────────────
-router.get('/credentials', (req: Request, res: Response) => {
+router.get('/credentials', async (req: Request, res: Response) => {
   const tenantId = getTenantIdFromRequest(req)
-  res.json(buildCredentialPayload(tenantId))
+  res.json(await buildCredentialPayload(tenantId))
 })
 
 // ── POST /api/health/test-connection ─────────────────────────────────────────
@@ -188,17 +187,17 @@ router.post('/test-connection', async (req: Request, res: Response) => {
     return
   }
 
-  const reachable =
+  const result =
     service === 'atlas'
-      ? await AtlasService.isReachable(tenantId)
-      : await SparkService.isReachable(tenantId)
+      ? await AtlasService.diagnose(tenantId)
+      : await SparkService.diagnose(tenantId)
 
-  logger.info(`test-connection → tenant:${tenantId} ${service} reachable:${reachable}`)
-  res.json({ service, reachable })
+  logger.info(`test-connection → tenant:${tenantId} ${service} reachable:${result.reachable} errorType:${result.errorType ?? 'none'}`)
+  res.json({ service, ...result })
 })
 
 // ── POST /api/health/disconnect ───────────────────────────────────────────────
-router.post('/disconnect', (req: Request, res: Response) => {
+router.post('/disconnect', async (req: Request, res: Response) => {
   const tenantId = getTenantIdFromRequest(req)
   const { service } = req.body as { service?: 'atlas' | 'spark' }
 
@@ -207,12 +206,12 @@ router.post('/disconnect', (req: Request, res: Response) => {
     return
   }
 
-  setTenantApiKey(tenantId, service, null)
-  setTenantUrl(tenantId, service, null)
-  if (service === 'spark') setSparkBusinessId(tenantId, null)
+  await setTenantApiKey(tenantId, service, null)
+  await setTenantUrl(tenantId, service, null)
+  if (service === 'spark') await setSparkBusinessId(tenantId, null)
 
   logger.info(`disconnect → tenant:${tenantId} ${service} cleared`)
-  res.json({ success: true, service, ...buildCredentialPayload(tenantId) })
+  res.json({ success: true, service, ...(await buildCredentialPayload(tenantId)) })
 })
 
 export default router

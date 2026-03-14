@@ -27,15 +27,22 @@ function SkeletonCard() {
 export default function DashboardPage() {
   const [snapshot, setSnapshot] = useState<BusinessSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/summary')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Server error ${r.status}`)
+        return r.json()
+      })
       .then((data) => {
         setSnapshot(data)
         setLoading(false)
       })
-      .catch(() => setLoading(false))
+      .catch((err) => {
+        setError(err?.message ?? 'Failed to load dashboard data')
+        setLoading(false)
+      })
   }, [])
 
   const sales = snapshot?.atlas.sales
@@ -54,10 +61,37 @@ export default function DashboardPage() {
     <>
       <Topbar
         title="Dashboard"
-        subtitle="Sharma General Store — Kanpur, UP"
+        subtitle={
+          snapshot?.atlas?.business
+            ? [
+                snapshot.atlas.business.name,
+                snapshot.atlas.business.city,
+                snapshot.atlas.business.state,
+              ]
+                .filter(Boolean)
+                .join(', ')
+            : loading
+            ? 'Loading…'
+            : 'Your Business'
+        }
       />
 
       <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
+        {/* Error banner */}
+        {error && !loading && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 flex items-center gap-3">
+            <svg className="w-5 h-5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-red-300">
+              Unable to load dashboard data — {error}.{' '}
+              <button onClick={() => { setLoading(true); setError(null); fetch('/api/summary').then(r => r.json()).then(d => { setSnapshot(d); setLoading(false) }).catch(e => { setError(e?.message ?? 'Failed'); setLoading(false) }) }} className="underline hover:no-underline">
+                Retry
+              </button>
+            </p>
+          </div>
+        )}
+
         {/* Stats Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {loading ? (

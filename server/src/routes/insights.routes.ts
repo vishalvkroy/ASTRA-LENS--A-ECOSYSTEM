@@ -13,7 +13,7 @@ router.post('/', aiRateLimit, async (req: Request, res: Response, next: NextFunc
     const forceRefresh = req.body?.refresh === true
     const tenantId = getTenantIdFromRequest(req)
     const snapshot = await AggregatorService.getSnapshot(forceRefresh, tenantId)
-    const insights = await AIService.generateInsights(snapshot, forceRefresh)
+    const insights = await AIService.generateInsights(tenantId, snapshot, forceRefresh)
 
     logger.info(`POST /api/insights -> tenant:${tenantId} cards:${insights.length}`)
     res.json({ insights, generatedAt: new Date().toISOString() })
