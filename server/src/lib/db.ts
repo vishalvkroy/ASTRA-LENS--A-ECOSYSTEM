@@ -3,7 +3,7 @@
  * Requires DATABASE_URL (or LENS_DATABASE_URL) environment variable.
  * Run: npm install pg @types/pg
  */
-import { Pool, PoolClient } from 'pg'
+import { Pool, PoolClient, QueryResultRow } from 'pg'
 import { logger } from './logger'
 
 const connectionString =
@@ -28,7 +28,7 @@ export function getPool(): Pool | null {
   return _pool
 }
 
-export async function query<T = any>(
+export async function query<T extends QueryResultRow = any>(
   sql: string,
   params: any[] = []
 ): Promise<{ rows: T[] }> {

@@ -73,10 +73,7 @@ app.use(express.json({ limit: '256kb' }))
 // ─── Global rate limit (all routes) ──────────────────────────
 app.use(generalRateLimit)
 
-// ─── Sentry request handler (must be before routes) ──────────
-if (Sentry) {
-  app.use(Sentry.Handlers.requestHandler())
-}
+// ─── Sentry request handler — v8+ handles this automatically via expressIntegration ──
 
 // ─── Health check (no rate limit — used by uptime monitors) ──
 app.get('/api/health', (_req, res) => {
@@ -101,8 +98,9 @@ app.use('/api/health', healthRouter)
 app.use('/api/internal', internalRouter)
 
 // ─── Sentry error handler (must be before custom error handler) ──
+// v8 API: setupExpressErrorHandler replaces Handlers.errorHandler
 if (Sentry) {
-  app.use(Sentry.Handlers.errorHandler())
+  ;(Sentry as any).setupExpressErrorHandler(app)
 }
 
 // ─── 404 + error handlers (must be last) ─────────────────────

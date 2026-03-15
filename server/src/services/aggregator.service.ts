@@ -29,7 +29,7 @@ export class AggregatorService {
         // If the cached entry is close to expiry and no refresh is already in
         // flight, kick off a background fetch so the next request sees fresh data
         const setAt = cache.get<number>(ttlKey)
-        if (setAt !== undefined && !_refreshing.has(resolvedTenantId)) {
+        if (setAt != null && !_refreshing.has(resolvedTenantId)) {
           const ageSeconds     = (Date.now() - setAt) / 1000
           const remainingTTL   = CACHE_TTL - ageSeconds
           if (remainingTTL < REFRESH_LEAD) {
