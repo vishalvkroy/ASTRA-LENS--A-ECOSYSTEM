@@ -1,26 +1,27 @@
 <svg width="32" height="32" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="72" y2="72" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0A2C2A"/>
-      <stop offset="100%" stop-color="#051816"/>
+      <stop offset="0%" stop-color="#0A0B1E"/>
+      <stop offset="100%" stop-color="#05061A"/>
     </linearGradient>
     <linearGradient id="iris" x1="36" y1="20" x2="36" y2="52" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#03fcdf"/>
-      <stop offset="100%" stop-color="#007A6D"/>
+      <stop offset="0%" stop-color="#C7D2FE"/>
+      <stop offset="45%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#3730A3"/>
     </linearGradient>
   </defs>
   <rect width="72" height="72" rx="16" fill="url(#bg)"/>
-  <rect width="72" height="72" rx="16" fill="none" stroke="#03fcdf" stroke-width=".8" stroke-opacity=".22"/>
-  <circle cx="36" cy="8"  r="2" fill="#03fcdf" fill-opacity=".8"/>
-  <circle cx="64" cy="36" r="2" fill="#03fcdf" fill-opacity=".7"/>
-  <path d="M36 8 A28 28 0 0 1 64 36" fill="none" stroke="#03fcdf" stroke-width="1.2" stroke-linecap="round" stroke-opacity=".5"/>
-  <circle cx="36" cy="36" r="20" fill="none" stroke="#03fcdf" stroke-width=".9" stroke-opacity=".4"/>
-  <circle cx="36" cy="36" r="14" fill="none" stroke="#03fcdf" stroke-width=".7" stroke-opacity=".25"/>
-  <circle cx="36" cy="36" r="8"  fill="#0A2C2A" stroke="#03fcdf" stroke-width=".8" stroke-opacity=".5"/>
+  <rect width="72" height="72" rx="16" fill="none" stroke="#6366F1" stroke-width=".8" stroke-opacity=".3"/>
+  <circle cx="36" cy="8"  r="2" fill="#818CF8" fill-opacity=".9"/>
+  <circle cx="64" cy="36" r="2" fill="#818CF8" fill-opacity=".75"/>
+  <path d="M36 8 A28 28 0 0 1 64 36" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-linecap="round" stroke-opacity=".6"/>
+  <circle cx="36" cy="36" r="20" fill="none" stroke="#6366F1" stroke-width=".9" stroke-opacity=".45"/>
+  <circle cx="36" cy="36" r="14" fill="none" stroke="#818CF8" stroke-width=".7" stroke-opacity=".28"/>
+  <circle cx="36" cy="36" r="8"  fill="#0A0B1E" stroke="#6366F1" stroke-width=".8" stroke-opacity=".6"/>
   <circle cx="36" cy="36" r="4.5" fill="url(#iris)"/>
-  <circle cx="33.5" cy="33.5" r="1.8" fill="#C8FFF8" fill-opacity=".6"/>
-  <line x1="36" y1="16" x2="36" y2="26" stroke="#03fcdf" stroke-width=".7" stroke-opacity=".3" stroke-linecap="round"/>
-  <line x1="36" y1="46" x2="36" y2="56" stroke="#03fcdf" stroke-width=".7" stroke-opacity=".3" stroke-linecap="round"/>
-  <line x1="16" y1="36" x2="26" y2="36" stroke="#03fcdf" stroke-width=".7" stroke-opacity=".3" stroke-linecap="round"/>
-  <line x1="46" y1="36" x2="56" y2="36" stroke="#03fcdf" stroke-width=".7" stroke-opacity=".3" stroke-linecap="round"/>
+  <circle cx="33.5" cy="33.5" r="1.8" fill="#E0E7FF" fill-opacity=".7"/>
+  <line x1="36" y1="16" x2="36" y2="26" stroke="#818CF8" stroke-width=".7" stroke-opacity=".32" stroke-linecap="round"/>
+  <line x1="36" y1="46" x2="36" y2="56" stroke="#818CF8" stroke-width=".7" stroke-opacity=".32" stroke-linecap="round"/>
+  <line x1="16" y1="36" x2="26" y2="36" stroke="#818CF8" stroke-width=".7" stroke-opacity=".32" stroke-linecap="round"/>
+  <line x1="46" y1="36" x2="56" y2="36" stroke="#818CF8" stroke-width=".7" stroke-opacity=".32" stroke-linecap="round"/>
 </svg>
