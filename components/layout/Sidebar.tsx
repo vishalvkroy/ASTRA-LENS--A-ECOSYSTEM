@@ -12,6 +12,7 @@ import {
   Plug,
   X,
 } from 'lucide-react'
+import { LensMark } from '@/components/LensLogo'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -39,9 +40,7 @@ function NavContent({
       {/* Logo */}
       <div className="py-6 px-5">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-400 flex items-center justify-center text-white font-bold text-sm shadow-glow">
-            L
-          </div>
+          <LensMark size={32} />
           <span className="text-white font-semibold text-sm tracking-tight">Astra Lens</span>
         </div>
         <div className="mt-5 border-t border-white/[0.06]" />

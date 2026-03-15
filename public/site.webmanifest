@@ -1,0 +1,12 @@
+{
+  "name": "Astra Lens",
+  "short_name": "Lens",
+  "description": "Business intelligence for Indian retailers",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "theme_color": "#020D0C",
+  "background_color": "#020D0C",
+  "display": "standalone",
+  "start_url": "/dashboard"
+}

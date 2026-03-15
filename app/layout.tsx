@@ -8,8 +8,12 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Astra Lens | Astra Studio',
-  description: 'AI Business Intelligence for Indian Shop Owners',
+  title: { default: 'Astra Lens', template: '%s | Astra Lens' },
+  description: 'AI business intelligence for Indian retailers. Insights, smart alerts, and revenue trends in Hindi and English.',
+  icons: {
+    icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],
+  },
+  manifest: '/site.webmanifest',
 }
 
 export default function RootLayout({
